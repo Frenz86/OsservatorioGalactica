@@ -61,7 +61,7 @@ if COVER.exists():
                              Inches(5.43), Inches(6.85))
 
 
-# ------------------------------------------- SLIDE 2: panoramica livello macro
+# ------------------------------------------- SLIDE 2: panoramica livello per area
 def add_overview_slide():
     slide = prs.slides.add_slide(blank)
 
@@ -69,22 +69,27 @@ def add_overview_slide():
     bar.fill.solid(); bar.fill.fore_color.rgb = ORANGE
     bar.line.fill.background()
 
-    add_text(slide, 0.55, 0.52, 11.0, 0.8, "PANORAMICA", 30, bold=True)
-    add_text(slide, 0.55, 1.18, 11.5, 0.4,
-             "Livello di maturità DEIA aggregato sull'intero assessment", 13, color=GREY)
+    add_text(slide, 0.55, 0.52, 12.25, 0.8, "LIVELLO GENERALE MATURITÀ", 30, bold=True)
 
-    # livello macro in evidenza
-    add_text(slide, 0.55, 2.35, 6.0, 0.35, "LIVELLO MACRO", 13, bold=True)
-    add_text(slide, 0.55, 2.78, 9.5, 1.5, "{{panoramica.risultato}}", 46, bold=True)
-    add_text(slide, 0.55, 4.35, 6.0, 0.5, "{{panoramica.livello_medio}}", 18, color=GREY)
-
-    # separatore
-    ln = slide.shapes.add_shape(1, Inches(0.55), Inches(5.15), Inches(12.25), Emu(9525))
+    # intestazioni di colonna
+    add_text(slide, 0.55, 1.75, 5.4, 0.4, "AREA", 14, bold=True, color=GREY)
+    add_text(slide, 6.0, 1.75, 6.0, 0.4, "RISULTATO", 14, bold=True, color=GREY)
+    ln = slide.shapes.add_shape(1, Inches(0.55), Inches(2.2), Inches(12.25), Emu(9525))
     ln.fill.solid(); ln.fill.fore_color.rgb = LINE
     ln.line.fill.background()
 
-    add_text(slide, 0.55, 5.35, 12.25, 0.35, "COSA SIGNIFICA", 13, bold=True)
-    add_text(slide, 0.55, 5.75, 12.25, 1.5, "{{panoramica.descrizione}}", 12, color=GREY)
+    # righe delle 4 aree
+    y = 2.45
+    row_h = 0.9
+    for area in fw["aree"]:
+        add_text(slide, 0.55, y, 5.4, row_h, area["nome"], 20, bold=True)
+        add_text(slide, 6.0, y, 6.0, row_h,
+                 "{{%s.risultato}}" % area["id"], 20, color=GREY)
+        sep = slide.shapes.add_shape(1, Inches(0.55), Inches(y + row_h - 0.05),
+                                     Inches(12.25), Emu(9525))
+        sep.fill.solid(); sep.fill.fore_color.rgb = LINE
+        sep.line.fill.background()
+        y += row_h
 
 
 add_overview_slide()
