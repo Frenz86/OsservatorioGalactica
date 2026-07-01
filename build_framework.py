@@ -1,0 +1,266 @@
+# -*- coding: utf-8 -*-
+"""
+Costruisce deia_framework.json : la libreria completa dei contenuti
+dell'assessment di maturità DEIA.
+
+Struttura:
+  - 4 AREE (Strategia, Cultura, Processi, Mercato)
+  - ogni area ha un "commento" per ognuno dei 4 livelli
+  - ogni area ha 3 SOTTOGRUPPI
+  - ogni sottogruppo ha "attivita" suggerite per ognuno dei 4 livelli
+  - i nomi dei livelli vivono in UN SOLO posto (meta.scala): cambiali lì
+    e si propagano ovunque, perché tutto referenzia il numero (1..4).
+
+I testi marcati DOC provengono dal documento originale; gli altri sono
+generati nello stesso stile e con progressione di maturità coerente.
+"""
+import json
+from pathlib import Path
+
+# ----------------------------------------------------------------------
+# SCALA  (4 livelli — metafora nautica; cambia qui i nomi se necessario)
+# ----------------------------------------------------------------------
+scala = [
+    {"livello": 1, "nome": "DERIVA",
+     "descrizione": "Assenza di direzione strutturata: i temi DEIA dipendono da iniziative spontanee e sensibilità individuali, senza presidio organizzativo."},
+    {"livello": 2, "nome": "ROTTA",
+     "descrizione": "Direzione emergente: vengono definiti primi obiettivi, ruoli e strumenti, ma l'applicazione è disomogenea tra funzioni."},
+    {"livello": 3, "nome": "NAVIGAZIONE",
+     "descrizione": "Gestione sistematica: pratiche, processi e responsabilità sono consolidati, monitorati e integrati nell'operatività quotidiana."},
+    {"livello": 4, "nome": "APPRODO",
+     "descrizione": "Maturità piena: i temi DEIA sono parte strutturale dell'identità e della strategia, generano valore e alimentano miglioramento continuo."},
+]
+
+# ----------------------------------------------------------------------
+# AREE  ->  commenti per livello  +  sottogruppi (attività per livello)
+# ----------------------------------------------------------------------
+aree = [
+    # ============================== STRATEGIA ==============================
+    {
+        "id": "strategia",
+        "nome": "STRATEGIA",
+        "commento": {
+            "1": "I temi DEIA non trovano ancora spazio nelle scelte strategiche dell'organizzazione. Mancano obiettivi espliciti, responsabilità definite e strumenti di pianificazione: gli interventi, quando presenti, nascono da iniziative isolate e non da una visione condivisa. La leadership non ha ancora riconosciuto la cultura organizzativa e l'inclusione come leve strategiche, e la direzione complessiva resta affidata al caso più che a un disegno intenzionale.",
+            "2": "L'organizzazione inizia a definire una direzione più chiara rispetto ai temi DEIA, introducendo obiettivi, responsabilità e strumenti di pianificazione più strutturati. La leadership riconosce il valore strategico della cultura organizzativa, dell'inclusione e della sostenibilità delle pratiche interne, favorendo un primo allineamento tra visione e azione. Restano tuttavia differenze significative tra funzioni e livelli organizzativi, e la capacità di tradurre gli obiettivi in comportamenti coerenti è ancora in evoluzione.",
+            "3": "La strategia DEIA è definita, condivisa e tradotta in obiettivi misurabili, presidiati da responsabilità chiare e da strumenti di pianificazione integrati nei processi decisionali. La leadership orienta in modo coerente funzioni e livelli organizzativi, allineando visione, risorse e azione. Il tema è stabilmente parte dell'agenda direzionale e la coerenza tra obiettivi dichiarati e comportamenti agiti è ormai solida, pur con margini di consolidamento.",
+            "4": "I temi DEIA sono pienamente integrati nella strategia e nell'identità dell'organizzazione, orientando in modo intenzionale scelte di lungo periodo, allocazione delle risorse e decisioni di business. La leadership ne fa una leva competitiva e di sostenibilità, con obiettivi ambiziosi, presidio costante e una cultura della pianificazione che alimenta miglioramento continuo. La direzione è chiara, condivisa a ogni livello e capace di generare valore duraturo.",
+        },
+        "sottogruppi": [
+            {
+                "id": "strategia_pianificazione",
+                "nome": "Strategia e Pianificazione",
+                "attivita": {
+                    "1": "Definire una prima direzione strategica sui temi DEIA, individuando obiettivi essenziali, priorità e un referente responsabile. Inserire il tema nell'agenda della leadership e avviare una pianificazione minima, anche sperimentale.",
+                    "2": "Integrare gli obiettivi DEIA nei processi di pianificazione aziendale e nei momenti decisionali più rilevanti. Rafforzare coordinamento, allocazione di risorse e monitoraggio delle iniziative per aumentare continuità e coerenza.",
+                    "3": "Consolidare la pianificazione DEIA con obiettivi pluriennali, budget dedicato e KPI integrati nel controllo di gestione. Estendere il presidio a tutte le funzioni, garantendo revisione periodica e allineamento costante tra strategia e operatività.",
+                    "4": "Mantenere la pianificazione DEIA come parte strutturale della strategia aziendale, collegandola a obiettivi di business e di sostenibilità. Anticipare scenari e bisogni emergenti, sperimentare approcci innovativi e diffondere le buone pratiche come riferimento interno ed esterno.",
+                },
+            },
+            {
+                "id": "governance_leadership",
+                "nome": "Governance e Leadership",
+                "attivita": {
+                    "1": "Chiarire ruoli, responsabilità e sponsorship sui temi DEIA, aumentando il coinvolgimento del management e creando momenti strutturati di confronto e indirizzo.",
+                    "2": "Formalizzare la governance DEIA con ruoli, deleghe e momenti di indirizzo ricorrenti. Coinvolgere attivamente il management come sponsor, collegando obiettivi DEIA a responsabilità manageriali e percorsi decisionali.",
+                    "3": "Rendere la governance DEIA pienamente operativa, con organi dedicati, accountability diffusa e collegamento agli obiettivi di performance della leadership. Garantire flussi informativi strutturati tra vertice, funzioni e persone.",
+                    "4": "Esercitare una leadership inclusiva diffusa a ogni livello, con governance solida, trasparente e orientata al miglioramento continuo. La dirigenza agisce da modello di riferimento e promuove la cultura DEIA anche nell'ecosistema esterno.",
+                },
+            },
+            {
+                "id": "misurazione_impatto",
+                "nome": "Misurazione e Impatto",
+                "attivita": {
+                    "1": "Introdurre primi strumenti di raccolta dati e ascolto organizzativo per comprendere bisogni, criticità e percezioni interne. Definire indicatori prioritari da monitorare nel tempo.",
+                    "2": "Strutturare un set di indicatori DEIA condiviso e ricorrente, integrando dati quantitativi e ascolto qualitativo. Avviare reportistica periodica per orientare decisioni e correggere le iniziative in corso.",
+                    "3": "Consolidare un sistema di misurazione integrato, con indicatori collegati agli obiettivi strategici e analisi di impatto regolari. Utilizzare i dati per indirizzare investimenti, priorità e azioni correttive in modo sistematico.",
+                    "4": "Misurare l'impatto DEIA in ottica di valore generato per organizzazione, persone e stakeholder, con metriche evolute e benchmark di settore. Alimentare un ciclo continuo di apprendimento e rendicontazione trasparente interna ed esterna.",
+                },
+            },
+        ],
+    },
+    # ============================== CULTURA ==============================
+    {
+        "id": "cultura",
+        "nome": "CULTURA",
+        "commento": {
+            "1": "Valori, comportamenti e modalità relazionali non sono ancora condivisi in modo chiaro e coerente nell'organizzazione. La qualità delle relazioni varia significativamente tra team e funzioni e le persone possono sperimentare difficoltà nell'esprimere idee, bisogni o punti di vista differenti e limitata sicurezza psicologica. Fiducia, ascolto e inclusione dipendono prevalentemente dalle sensibilità individuali e non costituiscono ancora elementi strutturali dell'esperienza organizzativa.",
+            "2": "L'organizzazione inizia a riconoscere e diffondere valori e comportamenti orientati all'inclusione, con prime pratiche condivise di ascolto e collaborazione. La qualità delle relazioni migliora, pur restando disomogenea tra team e funzioni, e cresce l'attenzione alla sicurezza psicologica. Fiducia e apertura non dipendono più solo dalle sensibilità individuali, ma non sono ancora pienamente strutturali.",
+            "3": "Valori e comportamenti inclusivi sono condivisi e agiti in modo coerente nella maggior parte dell'organizzazione, sostenuti da pratiche relazionali consolidate. La sicurezza psicologica è presidiata e le persone possono esprimere idee e bisogni con fiducia. Ascolto e inclusione sono parte riconoscibile dell'esperienza quotidiana, con margini di ulteriore radicamento.",
+            "4": "Una cultura inclusiva e sicura è parte strutturale dell'identità organizzativa: valori, comportamenti e relazioni sono coerenti, diffusi e vissuti a ogni livello. La sicurezza psicologica è elevata e stabile, la fiducia e l'ascolto alimentano collaborazione e innovazione. L'organizzazione è percepita come ambiente di riferimento per qualità delle relazioni e benessere.",
+        },
+        "sottogruppi": [
+            {
+                "id": "cultura_comportamenti",
+                "nome": "Cultura e Comportamenti",
+                "attivita": {
+                    "1": "Esplicitare i valori e i comportamenti attesi in chiave inclusiva, traducendoli in riferimenti concreti per la quotidianità. Avviare occasioni di confronto per costruire un linguaggio comune e accrescere la consapevolezza.",
+                    "2": "Diffondere e rinforzare i comportamenti inclusivi attraverso pratiche condivise, esempi della leadership e momenti strutturati di confronto. Ridurre le differenze tra team allineando le modalità relazionali.",
+                    "3": "Integrare i comportamenti inclusivi nei processi quotidiani e nei rituali organizzativi, riconoscendo e valorizzando le pratiche virtuose. Presidiare la coerenza tra valori dichiarati e agiti in tutte le funzioni.",
+                    "4": "Sostenere una cultura inclusiva matura come tratto identitario, alimentando innovazione e senso di appartenenza. Diffondere le buone pratiche dentro e fuori l'organizzazione e prevenire derive attraverso ascolto e miglioramento continuo.",
+                },
+            },
+            {
+                "id": "benessere_sicurezza",
+                "nome": "Benessere e Sicurezza Psicologica",
+                "attivita": {
+                    "1": "Creare le condizioni di base per la sicurezza psicologica, promuovendo ascolto, rispetto e possibilità di esprimersi senza timore. Individuare i principali fattori di disagio e avviare primi interventi.",
+                    "2": "Strutturare strumenti di ascolto e supporto al benessere, diffondendo pratiche che rafforzino fiducia e sicurezza psicologica. Formare i responsabili a gestire team in modo inclusivo e attento alle persone.",
+                    "3": "Presidiare in modo sistematico benessere e sicurezza psicologica con strumenti consolidati di ascolto, prevenzione e supporto. Monitorare regolarmente il clima e intervenire tempestivamente sulle criticità.",
+                    "4": "Mantenere livelli elevati e stabili di benessere e sicurezza psicologica come fattore distintivo dell'esperienza organizzativa. Anticipare i bisogni delle persone e diffondere approcci innovativi di cura e supporto.",
+                },
+            },
+            {
+                "id": "formazione_consapevolezza",
+                "nome": "Formazione e Consapevolezza",
+                "attivita": {
+                    "1": "Avviare primi percorsi di sensibilizzazione sui temi DEIA per costruire consapevolezza diffusa. Rendere accessibili contenuti e linguaggi di base, coinvolgendo le persone nei diversi ruoli.",
+                    "2": "Strutturare un'offerta formativa ricorrente sui temi DEIA, differenziata per ruoli e funzioni. Collegare la formazione a comportamenti concreti e misurarne la ricaduta sulla quotidianità.",
+                    "3": "Integrare la formazione DEIA nei percorsi di sviluppo e onboarding, con contenuti aggiornati e modalità coinvolgenti. Valorizzare community interne e momenti di apprendimento tra pari.",
+                    "4": "Alimentare una cultura dell'apprendimento continuo sui temi DEIA, con percorsi avanzati, sperimentazione e condivisione di conoscenza. Posizionare l'organizzazione come riferimento formativo anche verso l'esterno.",
+                },
+            },
+        ],
+    },
+    # ============================== PROCESSI ==============================
+    {
+        "id": "processi",
+        "nome": "PROCESSI",
+        "commento": {
+            "1": "I processi organizzativi non integrano ancora i principi DEIA e di accessibilità: selezione, gestione e sviluppo delle persone, così come gli strumenti di lavoro, possono generare barriere o disparità non intenzionali. Mancano criteri condivisi e presidio strutturato, e l'attenzione ai temi dipende dalle singole funzioni o persone più che da prassi consolidate.",
+            "2": "L'organizzazione inizia a rivedere i propri processi alla luce dei principi DEIA e di accessibilità, introducendo primi criteri, strumenti e accorgimenti nelle prassi operative e nella gestione delle persone. L'applicazione resta disomogenea tra funzioni e non sempre sistematica, ma cresce la consapevolezza dell'impatto dei processi su equità e inclusione.",
+            "3": "I principi DEIA e di accessibilità sono integrati in modo sistematico nei processi chiave, dalla gestione delle persone agli strumenti operativi, con criteri condivisi e presidio strutturato. Le barriere vengono identificate e ridotte proattivamente e l'attenzione all'equità è prassi consolidata nella maggior parte delle funzioni.",
+            "4": "I processi sono progettati e gestiti per essere pienamente inclusivi e accessibili, con criteri DEIA integrati end-to-end e logiche di miglioramento continuo. L'organizzazione anticipa bisogni diversi, innova le proprie prassi e utilizza i processi come leva per generare equità, qualità ed efficienza.",
+        },
+        "sottogruppi": [
+            {
+                "id": "processi_operativi_accessibilita",
+                "nome": "Processi Operativi e Accessibilità",
+                "attivita": {
+                    "1": "Mappare i principali processi operativi per individuare barriere e criticità di accessibilità. Definire primi criteri e accorgimenti minimi per rendere strumenti e procedure più inclusivi.",
+                    "2": "Introdurre criteri di accessibilità e inclusione nei processi operativi più rilevanti, standardizzando accorgimenti e strumenti. Estendere progressivamente le buone pratiche oltre le funzioni pioniere.",
+                    "3": "Consolidare l'accessibilità come requisito strutturale dei processi operativi, con standard condivisi, verifiche periodiche e responsabilità chiare. Ridurre proattivamente le barriere in modo sistematico.",
+                    "4": "Progettare i processi operativi secondo logiche di accessibilità universale e miglioramento continuo, anticipando bisogni diversi. Innovare strumenti e prassi e diffondere gli standard come riferimento.",
+                },
+            },
+            {
+                "id": "persone_processi",
+                "nome": "Persone e Processi",
+                "attivita": {
+                    "1": "Rivedere i processi di gestione delle persone (selezione, valutazione, sviluppo) per individuare possibili disparità. Introdurre primi criteri condivisi orientati a equità e inclusione.",
+                    "2": "Integrare criteri DEIA nei principali processi people, riducendo soggettività e bias. Formare chi gestisce le persone e standardizzare prassi più eque tra le funzioni.",
+                    "3": "Presidiare in modo sistematico l'equità nei processi people lungo l'intero ciclo di vita delle persone, con criteri, dati e verifiche consolidate. Garantire coerenza tra funzioni e livelli.",
+                    "4": "Gestire i processi people come leva strategica di equità e valorizzazione dei talenti, con prassi evolute, trasparenti e orientate al miglioramento continuo. Anticipare bisogni e diffondere standard di riferimento.",
+                },
+            },
+            {
+                "id": "innovazione_ricerca_sviluppo",
+                "nome": "Innovazione, Ricerca e Sviluppo",
+                "attivita": {
+                    "1": "Sensibilizzare le funzioni di innovazione e sviluppo all'integrazione dei principi DEIA e di accessibilità. Individuare primi ambiti in cui inclusione e diversità possono migliorare prodotti, servizi e soluzioni.",
+                    "2": "Introdurre criteri DEIA e di accessibilità nei processi di innovazione e sviluppo, coinvolgendo prospettive diverse. Sperimentare soluzioni inclusive in progetti pilota e valutarne l'impatto.",
+                    "3": "Integrare sistematicamente inclusione e accessibilità nei processi di ricerca e sviluppo, valorizzando la diversità come motore di innovazione. Consolidare metodi e competenze dedicate.",
+                    "4": "Fare della diversità e dell'accessibilità un vantaggio competitivo dell'innovazione, con processi maturi, sperimentazione continua e soluzioni di riferimento per il mercato e gli stakeholder.",
+                },
+            },
+        ],
+    },
+    # ============================== MERCATO ==============================
+    {
+        "id": "mercato",
+        "nome": "MERCATO",
+        "commento": {
+            "1": "L'organizzazione non presidia ancora in modo intenzionale la relazione tra DEIA e mercato: brand, comunicazione e offerta non riflettono coerentemente principi di inclusione e accessibilità. L'attenzione a clienti e utenti con bisogni diversi è occasionale e l'impatto sociale del posizionamento non è oggetto di riflessione strategica.",
+            "2": "L'organizzazione inizia a integrare i principi DEIA nella relazione con il mercato, curando una comunicazione più inclusiva e una maggiore attenzione all'accessibilità di prodotti e servizi. Cresce la consapevolezza del valore reputazionale e sociale del tema, anche se gli interventi non sono ancora pienamente sistematici e coerenti.",
+            "3": "I principi DEIA orientano in modo coerente brand, comunicazione e offerta: l'accessibilità per clienti e utenti è presidiata e l'impatto sociale è parte delle scelte di posizionamento. L'organizzazione comunica in modo inclusivo e credibile, con pratiche consolidate e monitorate.",
+            "4": "DEIA e accessibilità sono parte integrante del posizionamento e della proposta di valore: brand, comunicazione e offerta generano impatto sociale positivo e vantaggio competitivo. L'organizzazione è riconosciuta come riferimento per inclusione e responsabilità, con un legame autentico e duraturo con clienti, utenti e comunità.",
+        },
+        "sottogruppi": [
+            {
+                "id": "brand_comunicazione_rappresentazione",
+                "nome": "Brand, Comunicazione e Rappresentazione",
+                "attivita": {
+                    "1": "Verificare la coerenza tra valori DEIA e immagine comunicata, individuando stereotipi o barriere nella rappresentazione. Definire primi principi per una comunicazione più inclusiva e accessibile.",
+                    "2": "Adottare linee guida per una comunicazione e una rappresentazione inclusive e accessibili, applicandole ai principali canali. Rafforzare la coerenza tra messaggi, valori e pratiche reali.",
+                    "3": "Presidiare in modo sistematico l'inclusività di brand e comunicazione, con linee guida consolidate, verifiche e accessibilità dei contenuti. Garantire coerenza tra narrazione esterna e cultura interna.",
+                    "4": "Fare del brand un riferimento di inclusione e accessibilità, con una comunicazione autentica che genera valore reputazionale e sociale. Coinvolgere stakeholder e comunità e ispirare il settore.",
+                },
+            },
+            {
+                "id": "clienti_utenti_accessibilita",
+                "nome": "Clienti, Utenti e Accessibilità",
+                "attivita": {
+                    "1": "Comprendere i bisogni di clienti e utenti con caratteristiche ed esigenze diverse, individuando le principali barriere di accesso a prodotti e servizi. Avviare primi accorgimenti di accessibilità.",
+                    "2": "Introdurre criteri di accessibilità e inclusione nella progettazione di prodotti, servizi ed esperienze, raccogliendo feedback da utenti diversi. Standardizzare i primi miglioramenti.",
+                    "3": "Integrare sistematicamente l'accessibilità nell'esperienza di clienti e utenti, con standard consolidati, ascolto strutturato e verifiche regolari. Ridurre proattivamente le barriere.",
+                    "4": "Offrire esperienze pienamente accessibili e inclusive come tratto distintivo, anticipando i bisogni di clienti e utenti diversi. Coinvolgerli nella co-progettazione e innovare con continuità.",
+                },
+            },
+            {
+                "id": "impatto_sociale_posizionamento",
+                "nome": "Impatto Sociale e Posizionamento",
+                "attivita": {
+                    "1": "Riflettere sull'impatto sociale dell'organizzazione e sul legame tra posizionamento e temi DEIA. Individuare primi ambiti in cui generare valore per comunità e stakeholder.",
+                    "2": "Definire un posizionamento che integri impatto sociale e principi DEIA, avviando iniziative concrete verso comunità e stakeholder. Comunicarne in modo trasparente i primi risultati.",
+                    "3": "Integrare l'impatto sociale nelle scelte di posizionamento e di business, con iniziative consolidate, partnership e misurazione dei risultati. Rendicontare in modo strutturato e credibile.",
+                    "4": "Fare dell'impatto sociale positivo un elemento identitario e competitivo, con strategie mature, alleanze durature e risultati misurabili. Ispirare il settore e contribuire al cambiamento sistemico.",
+                },
+            },
+        ],
+    },
+]
+
+# ----------------------------------------------------------------------
+# ASSESSMENT DI ESEMPIO  (i valori reali letti dal documento originale)
+# ----------------------------------------------------------------------
+assessment_esempio = {
+    "nome": "Assessment esempio (dal documento)",
+    "aree": {
+        "strategia": {"livello": 2, "sottogruppi": {
+            "strategia_pianificazione": 2, "governance_leadership": 1, "misurazione_impatto": 1}},
+        "cultura": {"livello": 1, "sottogruppi": {
+            "cultura_comportamenti": 2, "benessere_sicurezza": 1, "formazione_consapevolezza": 1}},
+        "processi": {"livello": 1, "sottogruppi": {
+            "processi_operativi_accessibilita": 2, "persone_processi": 1, "innovazione_ricerca_sviluppo": 1}},
+        "mercato": {"livello": 1, "sottogruppi": {
+            "brand_comunicazione_rappresentazione": 2, "clienti_utenti_accessibilita": 1, "impatto_sociale_posizionamento": 1}},
+    },
+}
+
+framework = {
+    "meta": {
+        "titolo": "Assessment di Maturità DEIA",
+        "descrizione": "Libreria completa dei contenuti: per ogni area e sottogruppo i testi di tutti e 4 i livelli. Fonte dati unica per Excel e PowerPoint.",
+        "versione": "1.0",
+        "note_scala": "I nomi dei livelli sono definiti SOLO qui in 'scala'. Tutto il resto referenzia il numero 1..4: cambia un nome qui e si aggiorna ovunque.",
+        "scala": scala,
+    },
+    "aree": aree,
+    "assessment_esempio": assessment_esempio,
+}
+
+# --- validazione di completezza: nessun campo mancante ----------------
+errori = []
+livelli = ["1", "2", "3", "4"]
+for area in aree:
+    for lv in livelli:
+        if not area["commento"].get(lv, "").strip():
+            errori.append(f"commento mancante: {area['id']} liv {lv}")
+    if len(area["sottogruppi"]) != 3:
+        errori.append(f"{area['id']} non ha 3 sottogruppi")
+    for sg in area["sottogruppi"]:
+        for lv in livelli:
+            if not sg["attivita"].get(lv, "").strip():
+                errori.append(f"attivita mancante: {sg['id']} liv {lv}")
+
+n_aree = len(aree)
+n_sg = sum(len(a["sottogruppi"]) for a in aree)
+n_blocchi = n_aree * 4 + n_sg * 4
+
+out = Path(__file__).resolve().parent / "deia_framework.json"
+out.write_text(json.dumps(framework, ensure_ascii=False, indent=2), encoding="utf-8")
+
+print(f"Aree: {n_aree} | Sottogruppi: {n_sg} | Blocchi di testo: {n_blocchi}")
+print(f"Errori di completezza: {len(errori)}")
+for e in errori:
+    print("  -", e)
+print(f"Scritto: {out}")
