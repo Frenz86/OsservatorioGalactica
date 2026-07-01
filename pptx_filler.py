@@ -17,7 +17,8 @@ import io
 import math
 import re
 import unicodedata
-from openpyxl import load_workbook
+from openpyxl import load_workbook, Workbook
+from openpyxl.styles import Font, PatternFill
 from pptx import Presentation
 from pptx.enum.shapes import MSO_SHAPE_TYPE
 
@@ -123,6 +124,111 @@ def _score_to_level(score):
     return 4
 
 
+def _build_details(n_resp, area_scores, sub_scores, scala,
+                   nome_by_id, sub_area_nome, per_rispondente):
+    """Assembla il riepilogo numerico dei calcoli (per l'export Excel).
+
+    area_scores/sub_scores: {id: score medio}; per_rispondente: lista di
+    {id_area: score} (uno per rispondente, solo aree)."""
+    def _lv_nome(lv):
+        return scala.get(lv, (str(lv), ""))[0]
+
+    aree = []
+    for aid in AREA_ORDER:
+        if aid in area_scores:
+            sc = area_scores[aid]
+            lv = _score_to_level(sc)
+            aree.append({"id": aid, "nome": nome_by_id.get(aid, aid.upper()),
+                         "score": round(sc, 4), "livello": lv,
+                         "nome_livello": _lv_nome(lv)})
+    sottogruppi = []
+    for sid in sorted(sub_scores, key=lambda s: nome_by_id.get(s, s)):
+        sc = sub_scores[sid]
+        lv = _score_to_level(sc)
+        sottogruppi.append({"id": sid, "nome": nome_by_id.get(sid, sid),
+                            "area": sub_area_nome.get(sid, ""),
+                            "score": round(sc, 4), "livello": lv,
+                            "nome_livello": _lv_nome(lv)})
+    panoramica = {}
+    if area_scores:
+        overall = sum(area_scores.values()) / len(area_scores)
+        macro = _score_to_level(overall)
+        panoramica = {"score": round(overall, 4), "livello": macro,
+                      "nome_livello": _lv_nome(macro)}
+    return {"n_rispondenti": n_resp, "aree": aree, "sottogruppi": sottogruppi,
+            "panoramica": panoramica, "per_rispondente": per_rispondente or []}
+
+
+def build_calc_workbook(details):
+    """Crea un Excel leggibile con le medie (aree, sottogruppi, panoramica e
+    dettaglio per rispondente) che alimentano il PowerPoint."""
+    wb = Workbook()
+
+    def style_header(ws, row, values):
+        for c, v in enumerate(values, 1):
+            cell = ws.cell(row=row, column=c, value=v)
+            cell.font = Font(bold=True)
+            cell.fill = PatternFill("solid", fgColor="F2F2F2")
+
+    # --- Panoramica ---
+    ws = wb.active
+    ws.title = "Panoramica"
+    pan = details.get("panoramica", {})
+    ws["A1"] = "Numero rispondenti"
+    ws["B1"] = details.get("n_rispondenti")
+    ws["A2"] = "Livello macro"
+    ws["B2"] = f"{pan.get('livello', '')} - {pan.get('nome_livello', '')}".strip(" -")
+    ws["C2"] = pan.get("score")
+    ws["C2"].number_format = "0.00"
+    ws["C1"] = "Score medio"
+    style_header(ws, 4, ["Area", "Score medio", "Livello", "Nome livello"])
+    r = 5
+    for a in details.get("aree", []):
+        ws.cell(r, 1, a["nome"])
+        ws.cell(r, 2, a["score"]).number_format = "0.00"
+        ws.cell(r, 3, a["livello"])
+        ws.cell(r, 4, a["nome_livello"])
+        r += 1
+    ws.column_dimensions["A"].width = 34
+    ws.column_dimensions["B"].width = 14
+    ws.freeze_panes = "A5"
+
+    # --- Sottogruppi ---
+    ws2 = wb.create_sheet("Sottogruppi")
+    style_header(ws2, 1, ["Area", "Sottogruppo", "Score medio", "Livello", "Nome livello"])
+    r = 2
+    for s in details.get("sottogruppi", []):
+        ws2.cell(r, 1, s["area"])
+        ws2.cell(r, 2, s["nome"])
+        ws2.cell(r, 3, s["score"]).number_format = "0.00"
+        ws2.cell(r, 4, s["livello"])
+        ws2.cell(r, 5, s["nome_livello"])
+        r += 1
+    ws2.column_dimensions["A"].width = 14
+    ws2.column_dimensions["B"].width = 42
+    ws2.freeze_panes = "A2"
+
+    # --- Per rispondente (score delle 4 aree) ---
+    pr = details.get("per_rispondente", [])
+    aree = details.get("aree", [])
+    if pr and aree:
+        ws3 = wb.create_sheet("Per rispondente")
+        style_header(ws3, 1, ["Rispondente"] + [a["nome"] for a in aree])
+        for j, resp in enumerate(pr, 1):
+            ws3.cell(j + 1, 1, j)
+            for k, a in enumerate(aree, 2):
+                v = resp.get(a["id"])
+                if v is not None:
+                    ws3.cell(j + 1, k, round(v, 4)).number_format = "0.00"
+        ws3.column_dimensions["A"].width = 12
+        ws3.freeze_panes = "B2"
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return buf
+
+
 def _norm_label(s):
     """Normalizza per match case/accenti/punteggiatura insensibile."""
     s = unicodedata.normalize("NFKD", str(s))
@@ -168,10 +274,14 @@ def mapping_from_qualtrics(input_wb, mapping_xlsx):
     scala = _read_scala(wb_map)                       # {liv: (nome, desc)}
 
     testo_by_id_lv = {}                               # (id, liv) -> testo
+    nome_by_id = {}                                   # id -> nome (umano)
     if "Libreria" in wb_map.sheetnames:
         for rec in _records(wb_map["Libreria"]):
             _id = str(rec.get("id", "")).strip()
             lv = rec.get("livello")
+            nm = str(rec.get("nome", "")).strip()
+            if _id and nm:
+                nome_by_id.setdefault(_id, nm)
             if not _id or lv is None:
                 continue
             testo_by_id_lv[(_id, int(lv))] = (
@@ -196,14 +306,22 @@ def mapping_from_qualtrics(input_wb, mapping_xlsx):
 
     # --- mappa ogni colonna Score -> (id, tipo) tramite il nome su Libreria ---
     score_cols = {}                                   # col_idx -> (id, tipo)
+    sub_area_nome = {}                                # id sottogruppo -> nome area
     for ci, h in enumerate(headers):
         if not h.lower().startswith("score "):
             continue
         label = h[len("score "):].strip()
-        sub = label.split(" - ", 1)[1].strip() if " - " in label else label
+        if " - " in label:
+            area_part, sub = label.split(" - ", 1)
+            area_part, sub = area_part.strip(), sub.strip()
+        else:
+            area_part = sub = label
         hit = lookup.get(_norm_label(sub))
         if hit:
+            sid, tipo = hit
             score_cols[ci] = hit
+            if tipo != "area":
+                sub_area_nome[sid] = area_part
     tipo_by_sid = {sid: tipo for sid, tipo in score_cols.values()}
 
     # --- media degli score per id su tutti i rispondenti (skip righe metadati) ---
@@ -215,16 +333,18 @@ def mapping_from_qualtrics(input_wb, mapping_xlsx):
                 sums.setdefault(sid, []).append(float(v))
 
     mapping = {}
-    area_scores = {}                                  # id area -> score medio
+    area_scores, sub_scores = {}, {}                  # id -> score medio
     for sid, vals in sums.items():
         mean = sum(vals) / len(vals)
         lv = _score_to_level(mean)
         nome_liv = scala.get(lv, (str(lv), ""))[0]
         mapping[f"{sid}.risultato"] = f"{lv} - {nome_liv}"
-        campo = "commento" if tipo_by_sid.get(sid) == "area" else "attivita"
-        mapping[f"{sid}.{campo}"] = testo_by_id_lv.get((sid, lv), "")
         if tipo_by_sid.get(sid) == "area":
             area_scores[sid] = mean
+            mapping[f"{sid}.commento"] = testo_by_id_lv.get((sid, lv), "")
+        else:
+            sub_scores[sid] = mean
+            mapping[f"{sid}.attivita"] = testo_by_id_lv.get((sid, lv), "")
 
     # --- panoramica aggregata: media degli score delle 4 aree -> livello macro ---
     if area_scores and scala:
@@ -237,7 +357,17 @@ def mapping_from_qualtrics(input_wb, mapping_xlsx):
             f"{overall:.2f}".replace(".", ",") + " / 4"
         )
         mapping["panoramica.descrizione"] = desc
-    return mapping
+
+    # --- dettaglio numerico (per export) ---
+    area_ids = [a for a in AREA_ORDER if a in sums]
+    n_resp = max((len(sums[a]) for a in area_ids), default=0)
+    per_rispondente = [
+        {a: sums[a][j] for a in area_ids if j < len(sums[a])}
+        for j in range(n_resp)
+    ]
+    details = _build_details(n_resp, area_scores, sub_scores, scala,
+                             nome_by_id, sub_area_nome, per_rispondente)
+    return mapping, details
 
 
 # ----------------------------------------------------- survey Qualtrics RAW
@@ -305,10 +435,14 @@ def mapping_from_raw(raw_wb, mapping_xlsx):
     scala = _read_scala(wb_map)
 
     testo_by_id_lv = {}                               # (id, liv) -> testo
+    nome_by_id = {}                                   # id -> nome (umano)
     if "Libreria" in wb_map.sheetnames:
         for rec in _records(wb_map["Libreria"]):
             _id = str(rec.get("id", "")).strip()
             lv = rec.get("livello")
+            nm = str(rec.get("nome", "")).strip()
+            if _id and nm:
+                nome_by_id.setdefault(_id, nm)
             if not _id or lv is None:
                 continue
             testo_by_id_lv[(_id, int(lv))] = (
@@ -369,6 +503,8 @@ def mapping_from_raw(raw_wb, mapping_xlsx):
             resp_rows.append(r)
 
     area_acc, sub_acc = {}, {}                        # id -> [score per rispondente]
+    sub_area_nome = {}                                # id sottogruppo -> nome area
+    per_rispondente = []                              # [{id_area: score}] per rispondente
     for r in resp_rows:
         tipo = _a3_to_tipo(r[a3i]) if a3i is not None and a3i < len(r) else "PMI"
         by_cat, by_sub = {}, {}
@@ -387,17 +523,21 @@ def mapping_from_raw(raw_wb, mapping_xlsx):
             key = (cat, sub)
             ns, ds = by_sub.get(key, (0.0, 0.0))
             by_sub[key] = (ns + a * peso, ds + peso)
+        resp_areas = {}
         for cat, (n_, d_) in by_cat.items():
             aid = lookup.get(_norm_label(cat), (None, None))[0]
             if aid and d_:
                 area_acc.setdefault(aid, []).append(n_ / d_)
+                resp_areas[aid] = n_ / d_
         for (cat, sub), (n_, d_) in by_sub.items():
             sid = lookup.get(_norm_label(sub), (None, None))[0]
             if sid and d_:
                 sub_acc.setdefault(sid, []).append(n_ / d_)
+                sub_area_nome[sid] = cat
+        per_rispondente.append(resp_areas)
 
     mapping = {}
-    area_scores = {}
+    area_scores, sub_scores = {}, {}
     for aid, vals in area_acc.items():
         mean = sum(vals) / len(vals)
         area_scores[aid] = mean
@@ -407,6 +547,7 @@ def mapping_from_raw(raw_wb, mapping_xlsx):
         mapping[f"{aid}.commento"] = testo_by_id_lv.get((aid, lv), "")
     for sid, vals in sub_acc.items():
         mean = sum(vals) / len(vals)
+        sub_scores[sid] = mean
         lv = _score_to_level(mean)
         nome_liv = scala.get(lv, (str(lv), ""))[0]
         mapping[f"{sid}.risultato"] = f"{lv} - {nome_liv}"
@@ -420,7 +561,10 @@ def mapping_from_raw(raw_wb, mapping_xlsx):
         mapping["panoramica.risultato"] = f"{macro} - {nome}"
         mapping["panoramica.livello_medio"] = f"{overall:.2f}".replace(".", ",") + " / 4"
         mapping["panoramica.descrizione"] = desc
-    return mapping
+
+    details = _build_details(len(resp_rows), area_scores, sub_scores, scala,
+                             nome_by_id, sub_area_nome, per_rispondente)
+    return mapping, details
 
 
 def _mapping_from_sheet(ws):
@@ -485,11 +629,11 @@ def load_mapping(xlsx, regenerate=False):
     )
 
 
-def mapping_from_survey(input_xlsx, mapping_xlsx):
+def mapping_from_survey(input_xlsx, mapping_xlsx, with_details=False):
     """
     Costruisce il mapping dai risultati della survey.
 
-    Riconosce automaticamente tre formati di input:
+    Riconosce automaticamente due formati di input:
       - Qualtrics RAW: solo risposte alle domande CQ/PQ/SQ/MQ (nessuno Score
         precalcolato). Score ricalcolati con pesi PMI/GRANDI (vedi
         mapping_from_raw). Esempio: 'Galactica Prova_...xlsx'.
@@ -499,22 +643,25 @@ def mapping_from_survey(input_xlsx, mapping_xlsx):
 
     mapping_xlsx: deia_mapping_GM.xlsx con i fogli Libreria, Scala e (per la
     survey raw) Mappatura.
+
+    Se with_details=True ritorna (mapping, details) dove details è il riepilogo
+    numerico delle medie (per l'export Excel).
     """
     wb_in = load_workbook(input_xlsx, data_only=True)
 
     # --- formato Qualtrics RAW (solo risposte, score da ricalcolare) ---------
     if _has_raw_questions(wb_in):
-        return mapping_from_raw(wb_in, mapping_xlsx)
-
+        mapping, details = mapping_from_raw(wb_in, mapping_xlsx)
     # --- formato Qualtrics con Score già calcolati ---------------------------
-    if _has_score_columns(wb_in):
-        return mapping_from_qualtrics(wb_in, mapping_xlsx)
-
-    raise ValueError(
-        "Formato survey non riconosciuto. Serve la survey Qualtrics raw "
-        "(colonne CQ/PQ/SQ/MQ) oppure con Score gia' calcolati "
-        "(colonne 'Score <area>')."
-    )
+    elif _has_score_columns(wb_in):
+        mapping, details = mapping_from_qualtrics(wb_in, mapping_xlsx)
+    else:
+        raise ValueError(
+            "Formato survey non riconosciuto. Serve la survey Qualtrics raw "
+            "(colonne CQ/PQ/SQ/MQ) oppure con Score gia' calcolati "
+            "(colonne 'Score <area>')."
+        )
+    return (mapping, details) if with_details else mapping
 
 
 # ----------------------------------------------------------------- PPTX traversal

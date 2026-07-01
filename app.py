@@ -15,7 +15,12 @@ Avvio:
 import io
 import streamlit as st
 
-from pptx_filler import mapping_from_survey, extract_placeholders, fill_pptx
+from pptx_filler import (
+    mapping_from_survey,
+    extract_placeholders,
+    fill_pptx,
+    build_calc_workbook,
+)
 
 st.set_page_config(page_title="Compilatore PowerPoint DEIA", page_icon="📊", layout="wide")
 
@@ -74,9 +79,10 @@ if not (pptx_file and input_file and mapping_file):
 
 # --- costruisce il mapping dinamicamente ------------------------------------
 try:
-    mapping = mapping_from_survey(
+    mapping, details = mapping_from_survey(
         io.BytesIO(input_file.getvalue()),
         io.BytesIO(mapping_file.getvalue()),
+        with_details=True,
     )
 except Exception as e:
     st.error(f"Errore nella generazione del mapping: {e}")
@@ -135,4 +141,13 @@ st.download_button(
     file_name=out_name,
     mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
     type="primary",
+)
+
+calc_buf = build_calc_workbook(details)
+st.download_button(
+    "⬇️ Scarica i calcoli delle medie (.xlsx)",
+    data=calc_buf,
+    file_name=pptx_file.name.rsplit(".", 1)[0] + "_calcoli.xlsx",
+    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    help="Medie di aree/sottogruppi, livello macro e dettaglio per rispondente.",
 )
