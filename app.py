@@ -50,13 +50,22 @@ with col2:
     input_file = st.file_uploader(
         "2 · Risultati survey (.xlsx)",
         type=["xlsx"],
-        help="Formato: 1 riga, colonne = id delle aree/sottogruppi, valori = livello 1-4 (es. input_test.xlsx)",
+        help=(
+            "Export Qualtrics raw con le risposte alle domande "
+            "(colonne CQ/PQ/SQ/MQ + A3). Esempio: "
+            "'Galactica Prova_24 giugno 2026_05.41.xlsx'. "
+            "Più rispondenti vengono aggregati per media."
+        ),
     )
 with col3:
     mapping_file = st.file_uploader(
         "3 · Libreria DEIA (.xlsx)",
         type=["xlsx"],
-        help="Serve con i fogli 'Libreria' e 'Scala'  (es. deia_mapping.xlsx)",
+        help=(
+            "Fogli richiesti: 'Libreria' e 'Scala' sempre; 'Mappatura' "
+            "(pesi domanda->area PMI/GRANDI) serve solo per la survey raw. "
+            "Esempio: deia_mapping_GM.xlsx"
+        ),
     )
 
 if not (pptx_file and input_file and mapping_file):

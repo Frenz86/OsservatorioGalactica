@@ -16,6 +16,7 @@ Gestisce in modo robusto:
 import io
 import math
 import re
+import unicodedata
 from openpyxl import load_workbook
 from pptx import Presentation
 from pptx.enum.shapes import MSO_SHAPE_TYPE
@@ -34,6 +35,11 @@ PLACEHOLDER_RE = re.compile(r"\{\{\s*([^{}]+?)\s*\}\}")
 # le 4 aree dell'assessment, nell'ordine usato dal radar
 AREA_ORDER = ("strategia", "cultura", "processi", "mercato")
 
+# codici domanda esclusi dal calcolo degli score (peso nullo nella mappatura
+# originale). Dal foglio "Metodologia calcolo": "PQ19 è presente nella survey
+# e nella mappatura ma non ha peso PMI/GRANDI" -> va esclusa.
+_PESO_ZERO_COD = {"PQ19"}
+
 
 # ----------------------------------------------------------------- Excel -> mapping
 def _records(ws):
@@ -48,17 +54,6 @@ def _records(ws):
             continue
         out.append({h: row[i] for i, h in enumerate(headers) if h})
     return out
-
-
-def _wide_record(ws):
-    """Legge un foglio 'wide': riga 1 = id (intestazioni colonna), riga 2 = livello.
-    Ritorna {id: livello}."""
-    rows = list(ws.iter_rows(values_only=True))
-    if len(rows) < 2:
-        return {}
-    headers = [str(h).strip() if h is not None else "" for h in rows[0]]
-    data = rows[1]
-    return {h: v for h, v in zip(headers, data) if h}
 
 
 def _read_scala(wb):
@@ -110,6 +105,322 @@ def _area_scores(mapping):
         m = re.match(r"\s*(\d+)", str(mapping.get(f"{aid}.risultato", "")))
         scores.append((aid.upper(), int(m.group(1)) if m else 0))
     return scores
+
+
+# ----------------------------------------------------- survey Qualtrics (reale)
+# Soglie ufficiali score -> livello (dal foglio "Metodologia calcolo"):
+#   1 (Deriva)   1,00-1,50
+#   2 (Rotta)    1,51-2,50
+#   3 (Orbita)   2,51-3,50
+#   4 (Gravità)  > 3,50
+def _score_to_level(score):
+    if score <= 1.50:
+        return 1
+    if score <= 2.50:
+        return 2
+    if score <= 3.50:
+        return 3
+    return 4
+
+
+def _norm_label(s):
+    """Normalizza per match case/accenti/punteggiatura insensibile."""
+    s = unicodedata.normalize("NFKD", str(s))
+    s = "".join(c for c in s if not unicodedata.combining(c))
+    s = s.lower()
+    return re.sub(r"[^a-z0-9]", "", s)
+
+
+def _libreria_lookup(wb_map):
+    """{norm(nome): (id, tipo)} dalla Libreria, per ricondurre le colonne
+    'Score ...' della survey agli id usati dai segnaposto."""
+    out = {}
+    if "Libreria" not in wb_map.sheetnames:
+        return out
+    for rec in _records(wb_map["Libreria"]):
+        _id = str(rec.get("id", "")).strip()
+        nome = str(rec.get("nome", "")).strip()
+        tipo = str(rec.get("tipo", "")).strip().lower()
+        if nome and _id:
+            out[_norm_label(nome)] = (_id, tipo)
+    return out
+
+
+def _has_score_columns(wb):
+    """True se un foglio ha colonne che iniziano con 'Score ' (formato Qualtrics)."""
+    for name in wb.sheetnames:
+        hdr = next(wb[name].iter_rows(values_only=True), None)
+        if hdr and any(str(c).strip().lower().startswith("score ") for c in hdr if c):
+            return True
+    return False
+
+
+def mapping_from_qualtrics(input_wb, mapping_xlsx):
+    """Mapping dalla survey Qualtrics reale.
+
+    Colonne attese: 'Score <area>' e 'Score <area> - <sottogruppo>'.
+    Aggrega per MEDIA degli score su tutti i rispondenti, deriva il livello
+    con le soglie ufficiali (_score_to_level), poi costruisce i segnaposto
+    <id>.risultato (+ .commento per le aree / .attivita per i sottogruppi) e
+    la panoramica aggregata sulla media degli score delle 4 aree.
+    """
+    wb_map = load_workbook(mapping_xlsx, data_only=True)
+    scala = _read_scala(wb_map)                       # {liv: (nome, desc)}
+
+    testo_by_id_lv = {}                               # (id, liv) -> testo
+    if "Libreria" in wb_map.sheetnames:
+        for rec in _records(wb_map["Libreria"]):
+            _id = str(rec.get("id", "")).strip()
+            lv = rec.get("livello")
+            if not _id or lv is None:
+                continue
+            testo_by_id_lv[(_id, int(lv))] = (
+                "" if rec.get("testo") is None else str(rec["testo"])
+            )
+    lookup = _libreria_lookup(wb_map)                 # norm(nome) -> (id, tipo)
+
+    # --- trova il foglio con le colonne 'Score ...' ---
+    ws = None
+    for name in input_wb.sheetnames:
+        cand = input_wb[name]
+        hdr = next(cand.iter_rows(values_only=True), ())
+        hdr = [str(c).strip() if c is not None else "" for c in hdr]
+        if any(h.lower().startswith("score ") for h in hdr):
+            ws = cand
+            break
+    if ws is None:
+        raise ValueError("Nessun foglio con colonne 'Score ...' nella survey.")
+
+    rows = list(ws.iter_rows(values_only=True))
+    headers = [str(c).strip() if c is not None else "" for c in rows[0]]
+
+    # --- mappa ogni colonna Score -> (id, tipo) tramite il nome su Libreria ---
+    score_cols = {}                                   # col_idx -> (id, tipo)
+    for ci, h in enumerate(headers):
+        if not h.lower().startswith("score "):
+            continue
+        label = h[len("score "):].strip()
+        sub = label.split(" - ", 1)[1].strip() if " - " in label else label
+        hit = lookup.get(_norm_label(sub))
+        if hit:
+            score_cols[ci] = hit
+    tipo_by_sid = {sid: tipo for sid, tipo in score_cols.values()}
+
+    # --- media degli score per id su tutti i rispondenti (skip righe metadati) ---
+    sums = {}                                         # id -> [score...]
+    for row in rows[1:]:
+        for ci, (sid, _tipo) in score_cols.items():
+            v = row[ci] if ci < len(row) else None
+            if isinstance(v, (int, float)) and not isinstance(v, bool):
+                sums.setdefault(sid, []).append(float(v))
+
+    mapping = {}
+    area_scores = {}                                  # id area -> score medio
+    for sid, vals in sums.items():
+        mean = sum(vals) / len(vals)
+        lv = _score_to_level(mean)
+        nome_liv = scala.get(lv, (str(lv), ""))[0]
+        mapping[f"{sid}.risultato"] = f"{lv} - {nome_liv}"
+        campo = "commento" if tipo_by_sid.get(sid) == "area" else "attivita"
+        mapping[f"{sid}.{campo}"] = testo_by_id_lv.get((sid, lv), "")
+        if tipo_by_sid.get(sid) == "area":
+            area_scores[sid] = mean
+
+    # --- panoramica aggregata: media degli score delle 4 aree -> livello macro ---
+    if area_scores and scala:
+        overall = sum(area_scores.values()) / len(area_scores)
+        macro = _score_to_level(overall)
+        nome = scala.get(macro, ("", ""))[0] or str(macro)
+        desc = scala.get(macro, ("", ""))[1] or ""
+        mapping["panoramica.risultato"] = f"{macro} - {nome}"
+        mapping["panoramica.livello_medio"] = (
+            f"{overall:.2f}".replace(".", ",") + " / 4"
+        )
+        mapping["panoramica.descrizione"] = desc
+    return mapping
+
+
+# ----------------------------------------------------- survey Qualtrics RAW
+def _read_mappatura(wb_map):
+    """{cod: (categoria, sottogruppo, peso_pmi, peso_grandi)} dal foglio dei
+    pesi ('Mappatura' oppure 'Mappatura utilizzata'). Vuoto se assente."""
+    name = None
+    for cand in ("Mappatura", "Mappatura utilizzata"):
+        if cand in wb_map.sheetnames:
+            name = cand
+            break
+    if name is None:
+        return {}
+    out = {}
+
+    def _num(rec, key):
+        v = rec.get(key)
+        return v if isinstance(v, (int, float)) and not isinstance(v, bool) else None
+
+    for rec in _records(wb_map[name]):
+        cod = str(rec.get("cod.", "") or rec.get("cod", "")).strip()
+        if not cod:
+            continue
+        out[cod] = (
+            str(rec.get("categoria", "")).strip(),
+            str(rec.get("sottogruppo", "")).strip(),
+            _num(rec, "peso pmi"),
+            _num(rec, "peso grandi"),
+        )
+    return out
+
+
+def _a3_to_tipo(a3):
+    """PMI / GRANDI dalla fascia di dipendenti (colonna A3).
+    Metodologia: PMI se classe sotto i 250 dipendenti, GRANDI altrimenti."""
+    s = str(a3).lower() if a3 is not None else ""
+    if any(k in s for k in ("250", "500", "1000", "più", "oltre")):
+        return "GRANDI"
+    return "PMI"
+
+
+def _has_raw_questions(wb):
+    """True se la survey ha colonne domanda CQ/PQ/SQ/MQ e NESSUNA colonna
+    'Score ' precalcolata (formato raw da ricalcolare)."""
+    if _has_score_columns(wb):
+        return False
+    for name in wb.sheetnames:
+        hdr = next(wb[name].iter_rows(values_only=True), None)
+        if hdr and any(re.match(r"^(CQ|PQ|SQ|MQ)\d", str(c).strip())
+                       for c in hdr if c):
+            return True
+    return False
+
+
+def mapping_from_raw(raw_wb, mapping_xlsx):
+    """Mapping dalla survey Qualtrics RAW (solo risposte alle domande, senza
+    colonne Score/Livello già calcolate).
+
+    Ricalcola gli score pesati (score = Σ risposta×peso / Σ peso) usando la
+    mappatura domanda->area/sottogruppo + Peso PMI/GRANDI; il Tipo impresa
+    (PMI/GRANDI) è derivato dalla fascia di dipendenti (A3). PQ19 esclusa
+    (vedi _PESO_ZERO_COD). Più rispondenti aggregati per media.
+    """
+    wb_map = load_workbook(mapping_xlsx, data_only=True)
+    scala = _read_scala(wb_map)
+
+    testo_by_id_lv = {}                               # (id, liv) -> testo
+    if "Libreria" in wb_map.sheetnames:
+        for rec in _records(wb_map["Libreria"]):
+            _id = str(rec.get("id", "")).strip()
+            lv = rec.get("livello")
+            if not _id or lv is None:
+                continue
+            testo_by_id_lv[(_id, int(lv))] = (
+                "" if rec.get("testo") is None else str(rec["testo"])
+            )
+    lookup = _libreria_lookup(wb_map)                 # norm(nome) -> (id, tipo)
+    mapp = _read_mappatura(wb_map)                    # cod -> (cat, sub, pmi, grand)
+    if not mapp:
+        raise ValueError(
+            "Mappatura pesi mancante: nel file DEIA serve un foglio 'Mappatura' "
+            "(Cod.|Categoria|Sottogruppo|Peso PMI|Peso GRANDI) per ricalcolare "
+            "la survey raw."
+        )
+
+    # --- trova il foglio con le colonne domanda ---
+    ws = None
+    for name in raw_wb.sheetnames:
+        hdr = next(raw_wb[name].iter_rows(values_only=True), ())
+        hdr_s = [str(c).strip() if c is not None else "" for c in hdr]
+        if any(re.match(r"^(CQ|PQ|SQ|MQ)\d", h) for h in hdr_s):
+            ws = raw_wb[name]
+            break
+    if ws is None:
+        raise ValueError("Nessun foglio con domande CQ/PQ/SQ/MQ nella survey raw.")
+    rows = list(ws.iter_rows(values_only=True))
+    headers = [str(c).strip() if c is not None else "" for c in rows[0]]
+    idx = {}
+    for i, h in enumerate(headers):
+        idx.setdefault(h, i)
+    a3i = idx.get("A3")
+
+    # cod domanda -> indice colonna
+    qcol = {}
+    for cod in mapp:
+        ci = idx.get(cod)
+        if ci is None:                                # match tollerante sugli spazi
+            for h, i in idx.items():
+                if h.replace(" ", "") == cod.replace(" ", ""):
+                    ci = i
+                    break
+        if ci is not None:
+            qcol[cod] = ci
+
+    def _num(v):
+        if isinstance(v, bool):
+            return None
+        if isinstance(v, (int, float)):
+            return float(v)
+        try:
+            return float(str(v).strip())
+        except (ValueError, TypeError):
+            return None
+
+    # rispondenti = righe con almeno una risposta numerica (salta header/testo)
+    resp_rows = []
+    for r in rows[1:]:
+        if any(_num(r[ci]) is not None for ci in qcol.values() if ci < len(r)):
+            resp_rows.append(r)
+
+    area_acc, sub_acc = {}, {}                        # id -> [score per rispondente]
+    for r in resp_rows:
+        tipo = _a3_to_tipo(r[a3i]) if a3i is not None and a3i < len(r) else "PMI"
+        by_cat, by_sub = {}, {}
+        for cod, ci in qcol.items():
+            if cod in _PESO_ZERO_COD:
+                continue
+            cat, sub, pmi, grand = mapp[cod]
+            peso = pmi if tipo == "PMI" else grand
+            if peso is None:
+                continue
+            a = _num(r[ci]) if ci < len(r) else None
+            if a is None:
+                continue
+            nc, dc = by_cat.get(cat, (0.0, 0.0))
+            by_cat[cat] = (nc + a * peso, dc + peso)
+            key = (cat, sub)
+            ns, ds = by_sub.get(key, (0.0, 0.0))
+            by_sub[key] = (ns + a * peso, ds + peso)
+        for cat, (n_, d_) in by_cat.items():
+            aid = lookup.get(_norm_label(cat), (None, None))[0]
+            if aid and d_:
+                area_acc.setdefault(aid, []).append(n_ / d_)
+        for (cat, sub), (n_, d_) in by_sub.items():
+            sid = lookup.get(_norm_label(sub), (None, None))[0]
+            if sid and d_:
+                sub_acc.setdefault(sid, []).append(n_ / d_)
+
+    mapping = {}
+    area_scores = {}
+    for aid, vals in area_acc.items():
+        mean = sum(vals) / len(vals)
+        area_scores[aid] = mean
+        lv = _score_to_level(mean)
+        nome_liv = scala.get(lv, (str(lv), ""))[0]
+        mapping[f"{aid}.risultato"] = f"{lv} - {nome_liv}"
+        mapping[f"{aid}.commento"] = testo_by_id_lv.get((aid, lv), "")
+    for sid, vals in sub_acc.items():
+        mean = sum(vals) / len(vals)
+        lv = _score_to_level(mean)
+        nome_liv = scala.get(lv, (str(lv), ""))[0]
+        mapping[f"{sid}.risultato"] = f"{lv} - {nome_liv}"
+        mapping[f"{sid}.attivita"] = testo_by_id_lv.get((sid, lv), "")
+
+    if area_scores and scala:
+        overall = sum(area_scores.values()) / len(area_scores)
+        macro = _score_to_level(overall)
+        nome = scala.get(macro, ("", ""))[0] or str(macro)
+        desc = scala.get(macro, ("", ""))[1] or ""
+        mapping["panoramica.risultato"] = f"{macro} - {nome}"
+        mapping["panoramica.livello_medio"] = f"{overall:.2f}".replace(".", ",") + " / 4"
+        mapping["panoramica.descrizione"] = desc
+    return mapping
 
 
 def _mapping_from_sheet(ws):
@@ -178,43 +489,32 @@ def mapping_from_survey(input_xlsx, mapping_xlsx):
     """
     Costruisce il mapping dai risultati della survey.
 
-    input_xlsx  : file Excel wide (riga 1 = id delle aree/sottogruppi come
-                  intestazioni colonna, riga 2 = livello 1-4 di ciascuno)
-    mapping_xlsx: deia_mapping.xlsx con i fogli Libreria e Scala
+    Riconosce automaticamente tre formati di input:
+      - Qualtrics RAW: solo risposte alle domande CQ/PQ/SQ/MQ (nessuno Score
+        precalcolato). Score ricalcolati con pesi PMI/GRANDI (vedi
+        mapping_from_raw). Esempio: 'Galactica Prova_...xlsx'.
+      - Qualtrics con Score: colonne 'Score <area>' / 'Score <area> - <sottogruppo>'
+        con più rispondenti, aggregati per media (vedi mapping_from_qualtrics).
+        Esempio: 'Galactica_Prova_calcolo score.xlsx'.
+
+    mapping_xlsx: deia_mapping_GM.xlsx con i fogli Libreria, Scala e (per la
+    survey raw) Mappatura.
     """
-    # --- leggi Scala e Libreria dal file di mapping --------------------------
-    wb_map = load_workbook(mapping_xlsx, data_only=True)
-
-    scala = _read_scala(wb_map)  # {livello: (nome, descrizione)}
-
-    libreria = {}
-    tipo_by_id = {}
-    if "Libreria" in wb_map.sheetnames:
-        for rec in _records(wb_map["Libreria"]):
-            _id = str(rec.get("id", "")).strip()
-            lv = rec.get("livello")
-            if not _id or lv is None:
-                continue
-            libreria[(_id, int(lv))] = "" if rec.get("testo") is None else str(rec["testo"])
-            tipo_by_id[_id] = str(rec.get("tipo", "")).strip().lower()
-
-    # --- leggi i risultati della survey (input, formato wide) ----------------
     wb_in = load_workbook(input_xlsx, data_only=True)
-    ws_in = wb_in.active
 
-    mapping = {}
-    for _id, lv in _wide_record(ws_in).items():
-        if lv is None:
-            continue
-        lv = int(lv)
-        tipo = tipo_by_id.get(_id, "")
-        nome_liv = scala.get(lv, (str(lv), ""))[0]
-        mapping[f"{_id}.risultato"] = f"{lv} - {nome_liv}"
-        campo = "commento" if tipo == "area" else "attivita"
-        mapping[f"{_id}.{campo}"] = libreria.get((_id, lv), "")
+    # --- formato Qualtrics RAW (solo risposte, score da ricalcolare) ---------
+    if _has_raw_questions(wb_in):
+        return mapping_from_raw(wb_in, mapping_xlsx)
 
-    _derive_panoramica(mapping, scala)
-    return mapping
+    # --- formato Qualtrics con Score già calcolati ---------------------------
+    if _has_score_columns(wb_in):
+        return mapping_from_qualtrics(wb_in, mapping_xlsx)
+
+    raise ValueError(
+        "Formato survey non riconosciuto. Serve la survey Qualtrics raw "
+        "(colonne CQ/PQ/SQ/MQ) oppure con Score gia' calcolati "
+        "(colonne 'Score <area>')."
+    )
 
 
 # ----------------------------------------------------------------- PPTX traversal
