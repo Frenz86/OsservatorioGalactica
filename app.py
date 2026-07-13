@@ -4,8 +4,9 @@ App Streamlit — Compilatore PowerPoint DEIA.
 
 Flusso:
   1) Carica il PowerPoint template (.pptx) con segnaposto {{chiave}}
-  2) Carica i risultati della survey (input_test.xlsx  →  1 riga, colonne = id, valori = livello 1-4)
-  3) Carica la libreria DEIA (deia_mapping.xlsx  →  fogli Libreria + Scala)
+  2) Carica i risultati della survey (export Qualtrics .xlsx)
+  La libreria DEIA (deia_mapping_GM.xlsx, fogli Libreria/Scala/Mappatura) è
+  letta da un file fisso sul server, non più caricata da frontend.
   L'app costruisce il mapping dinamicamente e compila le slide.
 
 Avvio:
@@ -13,6 +14,8 @@ Avvio:
     streamlit run app.py
 """
 import io
+from pathlib import Path
+
 import streamlit as st
 
 from pptx_filler import (
@@ -23,6 +26,9 @@ from pptx_filler import (
 )
 
 st.set_page_config(page_title="Compilatore PowerPoint DEIA", page_icon="📊", layout="wide")
+
+# libreria DEIA: file fisso sul server, non più caricabile da frontend
+MAPPING_PATH = Path(__file__).resolve().parent / "deia_mapping_GM.xlsx"
 
 # --- login ------------------------------------------------------------------
 CREDENZIALI = {
@@ -44,11 +50,15 @@ if not st.session_state.get("autenticato"):
 
 st.title("📊 Compilatore PowerPoint DEIA")
 st.caption(
-    "Carica il template, i risultati della survey e la libreria DEIA. "
+    "Carica il template e i risultati della survey. "
     "L'app costruisce il mapping dai livelli e compila le slide."
 )
 
-col1, col2, col3 = st.columns(3)
+if not MAPPING_PATH.exists():
+    st.error(f"File libreria DEIA non trovato sul server: {MAPPING_PATH.name}")
+    st.stop()
+
+col1, col2 = st.columns(2)
 with col1:
     pptx_file = st.file_uploader("1 · PowerPoint template (.pptx)", type=["pptx"])
 with col2:
@@ -62,26 +72,16 @@ with col2:
             "Più rispondenti vengono aggregati per media."
         ),
     )
-with col3:
-    mapping_file = st.file_uploader(
-        "3 · Libreria DEIA (.xlsx)",
-        type=["xlsx"],
-        help=(
-            "Fogli richiesti: 'Libreria' e 'Scala' sempre; 'Mappatura' "
-            "(pesi domanda->area PMI/GRANDI) serve solo per la survey raw. "
-            "Esempio: deia_mapping_GM.xlsx"
-        ),
-    )
 
-if not (pptx_file and input_file and mapping_file):
-    st.info("Carica tutti e tre i file per procedere.")
+if not (pptx_file and input_file):
+    st.info("Carica il template e i risultati della survey per procedere.")
     st.stop()
 
 # --- costruisce il mapping dinamicamente ------------------------------------
 try:
     mapping, details = mapping_from_survey(
         io.BytesIO(input_file.getvalue()),
-        io.BytesIO(mapping_file.getvalue()),
+        MAPPING_PATH,
         with_details=True,
     )
 except Exception as e:
@@ -116,7 +116,7 @@ with st.expander(
     rows = []
     for k, v in sorted(mapping.items()):
         rows.append({"segnaposto": k, "testo": v[:120] + "…" if len(v) > 120 else v})
-    st.dataframe(rows, use_container_width=True, hide_index=True)
+    st.dataframe(rows, width="stretch", hide_index=True)
 
 # --- compila ----------------------------------------------------------------
 buf, stats = fill_pptx(io.BytesIO(pptx_bytes), mapping)

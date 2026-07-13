@@ -1,7 +1,9 @@
 # Compilatore PowerPoint DEIA — app Streamlit
 
-App in cui carichi un **PowerPoint** (template con segnaposto) e un **Excel** con il
-mapping; l'app sostituisce i segnaposto e ti fa scaricare il PowerPoint compilato.
+App in cui carichi un **PowerPoint** (template con segnaposto) e i **risultati
+della survey** (Excel export Qualtrics); l'app sostituisce i segnaposto e ti fa
+scaricare il PowerPoint compilato. La libreria DEIA (`deia_mapping_GM.xlsx`)
+non si carica più da frontend: è letta da un file fisso sul server.
 
 ## Avvio
 
