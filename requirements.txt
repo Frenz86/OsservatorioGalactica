@@ -1,4 +1,6 @@
-streamlit>=1.33
+streamlit>=1.49
 python-pptx>=0.6.23
 openpyxl>=3.1
 matplotlib>=3.6
+altair>=5.0
+pandas>=2.0

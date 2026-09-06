@@ -13,7 +13,7 @@ except Exception:
 
 from pptx import Presentation
 from pptx.util import Inches, Pt
-from pptx_filler import load_mapping, extract_placeholders, fill_pptx
+from mod1.pptx_filler import load_mapping, extract_placeholders, fill_pptx
 
 BASE = Path(__file__).resolve().parent
 ok = True
