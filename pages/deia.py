@@ -31,9 +31,23 @@ def _avvia_kaleido():
     (il sunburst): senza, ogni export riavvia il browser da zero (~5s); con il
     server persistente costa ~0,2s dopo il primo avvio. st.cache_resource fa
     sì che parta una sola volta per processo, non a ogni rerun."""
+    import shutil
     import kaleido
-    kaleido.get_chrome_sync()  # no-op se già scaricato; su Streamlit Cloud non c'è Chrome preinstallato
-    kaleido.start_sync_server()
+
+    chrome_path = (
+        shutil.which("chromium")
+        or shutil.which("chromium-browser")
+        or shutil.which("google-chrome")
+    )
+    if chrome_path:
+        # Streamlit Cloud: usa il Chromium di sistema (installato via packages.txt),
+        # le cui librerie condivise sono risolte da apt. Il Chrome standalone
+        # scaricato da kaleido si chiudeva subito per librerie mancanti sul
+        # container minimale di Streamlit Cloud.
+        kaleido.start_sync_server(path=chrome_path)
+    else:
+        kaleido.get_chrome_sync()  # sviluppo locale: scarica un Chrome dedicato
+        kaleido.start_sync_server()
     return True
 
 
