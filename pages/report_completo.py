@@ -42,6 +42,7 @@ def _avvia_kaleido():
     export costa ~2s e i successivi ~0,2s. st.cache_resource fa sì che il
     server venga avviato una sola volta per processo, non a ogni rerun."""
     import kaleido
+    kaleido.get_chrome_sync()  # no-op se già scaricato; su Streamlit Cloud non c'è Chrome preinstallato
     kaleido.start_sync_server()
     return True
 
