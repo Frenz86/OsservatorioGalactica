@@ -113,6 +113,36 @@ pics = [sh for sh in final_slide.shapes if sh.shape_type == MSO_SHAPE_TYPE.PICTU
 check(len(pics) == 1, f"1 immagine radar sulla slide finale (trovate {len(pics)})")
 radar_txt = all_text(last)
 check("{{radar" not in radar_txt, "nessun marcatore radar residuo nel file compilato")
+check("{{sunburst" not in radar_txt,
+      "senza 'details' il marcatore sunburst è rimosso senza lasciare graffe")
+
+print("== 8. Sunburst macro/micro sulla slide finale ==")
+from mod1.pptx_filler import _sunburst_image, _sigla, AREA_ORDER
+
+check(_sigla("Benessere e Sicurezza Psicologica") == "BSP", "sigla sottogruppo 'BSP'")
+check(_sigla("Strategia e Pianificazione") == "SP", "sigla sottogruppo 'SP'")
+
+fake_details = {
+    "aree": [
+        {"id": aid, "nome": aid.upper(), "score": 2.5, "livello": 2, "nome_livello": "ROTTA"}
+        for aid in AREA_ORDER
+    ],
+    "sottogruppi": [
+        {"id": f"{aid}_sub{i}", "nome": f"Sottogruppo {i}", "area": aid.upper(),
+         "score": 1.5 + i, "livello": 2, "nome_livello": "ROTTA"}
+        for aid in AREA_ORDER for i in range(1, 4)
+    ],
+}
+check(_sunburst_image(fake_details) is not None, "_sunburst_image genera un'immagine con dati validi")
+check(_sunburst_image({"aree": [], "sottogruppi": []}) is None, "_sunburst_image torna None senza aree")
+
+prs = Presentation()
+sl = prs.slides.add_slide(prs.slide_layouts[6])
+tb = sl.shapes.add_textbox(Inches(1), Inches(1), Inches(4), Inches(4))
+tb.text_frame.text = "{{sunburst.aree}}"
+b4, s4 = fill_pptx(_save(prs), {}, details=fake_details)
+pics4 = [sh for sh in Presentation(b4).slides[0].shapes if sh.shape_type == MSO_SHAPE_TYPE.PICTURE]
+check(len(pics4) == 1, "{{sunburst.aree}} sostituito con un'immagine quando 'details' è presente")
 
 print("\nJSON valido:", end=" ")
 json.loads((BASE / "deia_framework.json").read_text(encoding="utf-8"))

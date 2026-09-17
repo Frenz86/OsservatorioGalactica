@@ -136,7 +136,7 @@ for area in fw["aree"]:
         y += row_h + 0.02
 
 
-# ------------------------------------------------ SLIDE FINALE: profilo + radar
+# ------------------------------------------ SLIDE FINALE: profilo + radar + sunburst
 def add_profile_slide():
     slide = prs.slides.add_slide(blank)
 
@@ -146,25 +146,33 @@ def add_profile_slide():
 
     add_text(slide, 0.55, 0.52, 11.0, 0.8, "PROFILO DI MATURITÀ", 30, bold=True)
     add_text(slide, 0.55, 1.18, 11.5, 0.4,
-             "Distribuzione dei livelli di maturità per area", 13, color=GREY)
+             "Distribuzione dei livelli di maturità per area (radar) e per area/sottogruppo (sunburst)",
+             13, color=GREY)
 
-    # marcatore radar: alla compilazione diventa un'immagine dinamica
-    add_text(slide, 0.7, 1.85, 6.7, 5.3, "{{radar.aree}}", 12, color=LINE)
+    # marcatori grafici: alla compilazione diventano immagini dinamiche
+    add_text(slide, 0.55, 1.75, 4.3, 4.3, "{{radar.aree}}", 12, color=LINE)
+    add_text(slide, 4.95, 1.75, 4.3, 4.3, "{{sunburst.aree}}", 12, color=LINE)
 
     # colonna destra: livelli per area + livello macro
-    x = 8.05
-    add_text(slide, x, 1.95, 4.8, 0.35, "LIVELLI PER AREA", 13, bold=True)
+    x = 9.4
+    add_text(slide, x, 1.95, 3.4, 0.35, "LIVELLI PER AREA", 12, bold=True)
     y = 2.45
     for area in fw["aree"]:
-        add_text(slide, x, y, 4.8, 0.5,
-                 [(area["nome"] + "   ", True, DARK, 13),
-                  ("{{%s.risultato}}" % area["id"], False, GREY, 13)], 13)
+        add_text(slide, x, y, 3.4, 0.5,
+                 [(area["nome"] + "  ", True, DARK, 12),
+                  ("{{%s.risultato}}" % area["id"], False, GREY, 12)], 12)
         y += 0.58
-    ln = slide.shapes.add_shape(1, Inches(x), Inches(y + 0.05), Inches(4.65), Emu(9525))
+    ln = slide.shapes.add_shape(1, Inches(x), Inches(y + 0.05), Inches(3.4), Emu(9525))
     ln.fill.solid(); ln.fill.fore_color.rgb = LINE
     ln.line.fill.background()
-    add_text(slide, x, y + 0.22, 4.8, 0.35, "LIVELLO MACRO", 13, bold=True)
-    add_text(slide, x, y + 0.62, 4.8, 0.5, "{{panoramica.risultato}}", 17, bold=True, color=ORANGE)
+    add_text(slide, x, y + 0.22, 3.4, 0.35, "LIVELLO MACRO", 12, bold=True)
+    add_text(slide, x, y + 0.62, 3.4, 0.5, "{{panoramica.risultato}}", 16, bold=True, color=ORANGE)
+
+    # footer a larghezza piena: punteggio medio + descrizione del livello macro
+    add_text(slide, 0.55, 6.15, 12.25, 0.3,
+             [("PUNTEGGIO MEDIO COMPLESSIVO   ", True, DARK, 10),
+              ("{{panoramica.livello_medio}}", False, GREY, 10)], 10)
+    add_text(slide, 0.55, 6.5, 12.25, 0.85, "{{panoramica.descrizione}}", 10, color=GREY)
 
 
 add_profile_slide()

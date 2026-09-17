@@ -1,32 +1,24 @@
 # -*- coding: utf-8 -*-
 """
-Pagina — Matrice di trasparenza DEIA (mod2).
+Matrice di trasparenza DEIA - applicazione Streamlit.
 
-Si carica un solo file (01qualtrix_output_finale.xlsx) e se ne leggono due
-fogli diversi per i due assi della matrice:
+Si caricano i due file sorgente e si ottiene la matrice tema per tema:
 
-    foglio Qualtrix_output         -> asse X, maturita' DEIA praticata (survey)
-    foglio Grafici_1 (o Grafici_2) -> asse Y, maturita' DEIA comunicata (reporting)
+    qualtrix_output.xlsx    -> asse X, maturita' DEIA praticata (survey)
+    elaborato_giorgia.xlsx  -> asse Y, maturita' DEIA comunicata (reporting)
 
-Resta supportato anche il vecchio foglio matrice_y (elaborato_giorgia.xlsx) per
-l'asse Y, nello stesso file o in un file separato.
+Avvio:  streamlit run app.py
 """
 
 import io
-from pathlib import Path
 
 import pandas as pd
-import plotly.graph_objects as go
 import streamlit as st
 
-from mod2 import deia_core as core
-from mod2.grafico import matrice_chart
+import deia_core as core
+from grafico import matrice_chart
 
 COLONNE_MATRICE = ["Tema", "X praticata", "Y comunicata", "Quadrante"]
-
-# libreria descrizioni per punteggio (asse Y): file fisso sul server, come la
-# libreria DEIA di mod1 — non si carica da frontend
-COMMENTI_PATH = Path(__file__).resolve().parents[1] / "mod2" / "Y_commenti_dinamici.xlsx"
 
 INCHIOSTRO = "#0b0b0b"  # testo sulle tinte chiare della tabella, in entrambi i temi
 
@@ -52,38 +44,10 @@ def it(v, dec=2):
     return f"{v:.{dec}f}".replace(".", ",")
 
 
-def radar(labels, valori, titolo, colore, riempimento):
-    """Spider/radar chart Plotly 0-4, chiuso (il primo punto e' ripetuto in
-    coda), stile a righe punteggiate con area riempita."""
-    r = [valori.get(lb, 0) for lb in labels]
-    fig = go.Figure(go.Scatterpolar(
-        r=r + r[:1], theta=labels + labels[:1],
-        fill="toself", fillcolor=riempimento,
-        line=dict(color=colore, width=2, dash="dot"),
-        marker=dict(size=4, color=colore),
-    ))
-    tick = [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4]
-    fig.update_layout(
-        polar=dict(
-            radialaxis=dict(
-                range=[0, 4], tickvals=tick,
-                ticktext=[it(v, 1) for v in tick],
-                tickfont=dict(size=9, color="#999999"),
-                gridcolor="#e1e0d9",
-            ),
-            angularaxis=dict(tickfont=dict(size=11, color="#333333")),
-            bgcolor="rgba(0,0,0,0)",
-        ),
-        showlegend=False,
-        title=dict(text=titolo, font=dict(size=15, color="#666666"), x=0.5),
-        paper_bgcolor="rgba(0,0,0,0)",
-        margin=dict(t=60, b=30, l=40, r=40),
-        height=440,
-    )
-    return fig
-
-
 # ------------------------------------------------------------------ layout
+st.set_page_config(page_title="Matrice di trasparenza DEIA",
+                   page_icon="🧭", layout="wide")
+
 st.title("Matrice di trasparenza DEIA")
 st.caption(
     "Asse X = maturità DEIA **praticata** (survey Qualtrics) · "
@@ -91,25 +55,30 @@ st.caption(
     f"Soglia alta/bassa maturità: {it(core.SOGLIA)}."
 )
 
-file_up = st.file_uploader(
-    "File export",
-    type=["xlsx"], key="file",
-    help="01qualtrix_output_finale.xlsx: asse X dal foglio 'Qualtrix_output' "
-         "(riga 1 = codici domanda CQ1/PQ1/SQ1/MQ1…, riga 2 = testi, righe 3+ = "
-         "risposte), asse Y dal foglio 'Grafici_1' o 'Grafici_2' (una riga per "
-         "azienda, una colonna per tema: Foundation, Onboarding & Retention, "
-         "Employment…). Resta supportato anche il vecchio foglio matrice_y "
-         "(Azienda, Dimensione, Tema reporting, Score reporting).",
-)
+col_x, col_y = st.columns(2)
+with col_x:
+    file_x = st.file_uploader(
+        "**Asse X** — export Qualtrics della survey",
+        type=["xlsx"], key="x",
+        help="Riga 1 = codici domanda (CQ1, PQ1, SQ1, MQ1…), riga 2 = testi, "
+             "righe 3+ = risposte. Es. qualtrix_output.xlsx",
+    )
+with col_y:
+    file_y = st.file_uploader(
+        "**Asse Y** — content analysis del reporting",
+        type=["xlsx"], key="y",
+        help="Foglio matrice_y con colonne Azienda, Dimensione, Tema reporting, "
+             "Score reporting. Es. elaborato_giorgia.xlsx",
+    )
 
-if not file_up:
-    st.info("Carica il file per calcolare la matrice.")
+if not (file_x and file_y):
+    st.info("Carica entrambi i file per calcolare la matrice.")
     st.stop()
 
 # ------------------------------------------------------------------ lettura
 try:
-    rispondenti = core.elenca_rispondenti(file_up)
-    reporting = core.leggi_reporting(file_up)
+    rispondenti = core.elenca_rispondenti(file_x)
+    reporting = core.leggi_reporting(file_y)
 except core.ErroreInput as exc:
     st.error(f"Input non valido: {exc}")
     st.stop()
@@ -126,7 +95,7 @@ with sel_y:
                  st.selectbox("Azienda reporting (Y)", aziende_y))
 
 try:
-    survey = core.leggi_survey(file_up, riga=riga)
+    survey = core.leggi_survey(file_x, riga=riga)
     righe, dettaglio, azienda_y = core.costruisci_matrice(survey, reporting, azienda_y)
 except core.ErroreInput as exc:
     st.error(f"Input non valido: {exc}")
@@ -175,92 +144,6 @@ st.dataframe(tabella.style.apply(tinta, axis=1), hide_index=True,
 conteggio = df[df["Quadrante"] != ""]["Quadrante"].value_counts()
 st.caption(" · ".join(f"**{q}**: {n}" for q, n in conteggio.items()))
 
-# --------------------------------------------------------------- radar (Y)
-per_azienda_grafici, temi_grafici, dim_grafici = core.leggi_valori_grafici(file_up)
-valori_y = per_azienda_grafici.get(azienda_y, {})
-if valori_y and temi_grafici and dim_grafici:
-    st.subheader("Profilo radar (Grafici_1)")
-    rc1, rc2 = st.columns(2)
-    with rc1:
-        st.plotly_chart(
-            radar(temi_grafici, valori_y, f"{azienda_y.upper()}_REPORTING",
-                  "#3a9d5d", "rgba(58,157,93,0.18)"),
-            width="stretch",
-        )
-    with rc2:
-        st.plotly_chart(
-            radar(dim_grafici, valori_y, f"{azienda_y.upper()}_DIVERSITA'",
-                  "#d97a95", "rgba(217,122,149,0.18)"),
-            width="stretch",
-        )
-
-# ------------------------------------------------------- radar media settore
-per_settore, temi_settore, dim_settore = core.leggi_valori_grafici(
-    file_up, nomi_foglio=("Grafici_2",))
-nome_media = next(
-    (a for a in per_settore if core.norm(a) == core.norm("Media settore")), None)
-valori_media = per_settore.get(nome_media, {}) if nome_media else {}
-if valori_media and temi_settore and dim_settore:
-    st.caption(
-        f"Benchmark: media di {len(per_settore) - 1} aziende concorrenti "
-        "(foglio Grafici_2)."
-    )
-    rc3, rc4 = st.columns(2)
-    with rc3:
-        st.plotly_chart(
-            radar(temi_settore, valori_media, "MEDIA SETTORE_REPORTING",
-                  "#5b7fa6", "rgba(91,127,166,0.18)"),
-            width="stretch",
-        )
-    with rc4:
-        st.plotly_chart(
-            radar(dim_settore, valori_media, "MEDIA SETTORE_DIVERSITA'",
-                  "#5b7fa6", "rgba(91,127,166,0.18)"),
-            width="stretch",
-        )
-
-# ------------------------------------------------------------- descrizioni Y
-def _livello_y(y):
-    if y is None or pd.isna(y):
-        return None
-    return max(1, min(4, int(round(y))))
-
-
-commenti = {}
-if COMMENTI_PATH.exists():
-    try:
-        commenti = core.leggi_commenti(COMMENTI_PATH)
-    except core.ErroreInput:
-        commenti = {}
-
-if commenti:
-    st.subheader("Descrizioni per punteggio (asse Y)")
-    st.caption(
-        f"Testo di riferimento per il punteggio comunicato di {azienda_y} su "
-        "ciascun tema, dalla libreria Y_commenti_dinamici.xlsx."
-    )
-    tabella_comm = pd.DataFrame([
-        {
-            "Tema": r["Tema"],
-            "Punteggio Y": it(r["Y comunicata"]),
-            "Livello": _livello_y(r["Y comunicata"]) or "n.d.",
-            "Descrizione": commenti.get(
-                (r["Tema"], _livello_y(r["Y comunicata"])),
-                "n.d." if _livello_y(r["Y comunicata"]) is None else "",
-            ),
-        }
-        for r in righe
-    ])
-    st.dataframe(
-        tabella_comm, hide_index=True, width="stretch",
-        column_config={"Descrizione": st.column_config.TextColumn(width="large")},
-    )
-elif COMMENTI_PATH.exists():
-    st.caption(
-        "Libreria descrizioni trovata ma senza il foglio 'Commenti coding' "
-        "atteso: nessuna descrizione per punteggio mostrata."
-    )
-
 # ------------------------------------------------------------------ grafico
 chart = matrice_chart(df, core.SOGLIA, tema_attivo())
 if chart is not None:
@@ -308,8 +191,6 @@ with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
     tabella.to_excel(writer, sheet_name="Matrice", index=False)
     df.to_excel(writer, sheet_name="Dettaglio temi", index=False)
     dett.to_excel(writer, sheet_name="Calcolo asse X", index=False)
-    if commenti:
-        tabella_comm.to_excel(writer, sheet_name="Descrizioni Y", index=False)
 
 d1, d2 = st.columns(2)
 d1.download_button("Scarica la matrice (CSV)",

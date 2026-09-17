@@ -1,5 +1,8 @@
 # Compilatore PowerPoint DEIA — app Streamlit
 
+https://osservatoriogalactica.streamlit.app/
+
+
 App in cui carichi un **PowerPoint** (template con segnaposto) e i **risultati
 della survey** (Excel export Qualtrics); l'app sostituisce i segnaposto e ti fa
 scaricare il PowerPoint compilato. La libreria DEIA (`deia_mapping_GM.xlsx`)

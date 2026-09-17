@@ -95,7 +95,7 @@ with st.expander(
     st.dataframe(rows, width="stretch", hide_index=True)
 
 # --- compila ----------------------------------------------------------------
-buf, stats = fill_pptx(io.BytesIO(pptx_bytes), mapping)
+buf, stats = fill_pptx(io.BytesIO(pptx_bytes), mapping, details=details)
 
 c1, c2, c3 = st.columns(3)
 c1.metric("Segnaposto compilati", stats["n_sostituiti"])

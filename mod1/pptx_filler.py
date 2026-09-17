@@ -16,6 +16,7 @@ Gestisce in modo robusto:
 import io
 import math
 import re
+import textwrap
 import unicodedata
 from openpyxl import load_workbook, Workbook
 from openpyxl.styles import Font, PatternFill
@@ -30,6 +31,13 @@ try:
     _HAS_MPL = True
 except Exception:                       # matplotlib assente -> radar saltato
     _HAS_MPL = False
+
+# plotly + kaleido per il sunburst (kaleido serve per esportare in PNG statico)
+try:
+    import plotly.graph_objects as _go
+    _HAS_PLOTLY = True
+except Exception:                       # plotly/kaleido assenti -> sunburst saltato
+    _HAS_PLOTLY = False
 
 PLACEHOLDER_RE = re.compile(r"\{\{\s*([^{}]+?)\s*\}\}")
 
@@ -754,25 +762,135 @@ def _radar_image(scores):
     return buf
 
 
-def _install_dynamic_images(prs, mapping):
-    """Sostituisce i marcatori {{radar.aree}} con un'immagine radar generata
-    dai punteggi delle aree presenti nel mapping."""
-    if not _HAS_MPL:
-        return
+SUNBURST_RE = re.compile(r"\{\{\s*sunburst\.aree\s*\}\}")
+
+# colori per area (anello interno pieno, anello esterno schiarito)
+_AREA_COLORS = {
+    "strategia": "#E86A17",
+    "cultura": "#2E86AB",
+    "processi": "#6B4E9C",
+    "mercato": "#3F9C6D",
+}
+
+# parole da ignorare nella sigla dei sottogruppi (es. "Strategia e Pianificazione" -> "SP")
+_SIGLA_STOPWORDS = {"e", "di", "d", "del", "della", "dei", "delle", "il", "lo",
+                    "la", "i", "gli", "le", "a", "al", "con", "per"}
+
+
+def _lighten(hex_color, amount=0.5):
+    """Schiarisce un colore esadecimale verso il bianco (amount 0..1)."""
+    hex_color = hex_color.lstrip("#")
+    r, g, b = (int(hex_color[i:i + 2], 16) for i in (0, 2, 4))
+    r = round(r + (255 - r) * amount)
+    g = round(g + (255 - g) * amount)
+    b = round(b + (255 - b) * amount)
+    return f"#{r:02x}{g:02x}{b:02x}"
+
+
+def _sigla(nome):
+    """Sigla di un sottogruppo dalle iniziali delle parole significative
+    (es. 'Benessere e Sicurezza Psicologica' -> 'BSP')."""
+    parole = re.split(r"[\s,]+", str(nome).strip())
+    lettere = [p[0].upper() for p in parole if p and p.lower() not in _SIGLA_STOPWORDS]
+    return "".join(lettere) or str(nome)[:2].upper()
+
+
+def _wrap_label(text, width=13):
+    """Spezza un'etichetta lunga su più righe (<br>) per farla stare negli
+    spicchi stretti del sunburst."""
+    return "<br>".join(textwrap.wrap(str(text), width=width, break_long_words=False))
+
+
+def _sunburst_image(details):
+    """Sunburst (Plotly) a due livelli dai dati di 'details' (vedi
+    _build_details): anello interno = le 4 macro-aree, esterno = i loro
+    sottogruppi. L'ampiezza di ogni spicchio è proporzionale al punteggio
+    (branchvalues='total': l'area vale la somma dei suoi sottogruppi).
+    Ritorna BytesIO PNG, None se mancano i dati o plotly/kaleido non ci sono."""
+    if not _HAS_PLOTLY:
+        return None
+    aree = [a for aid in AREA_ORDER for a in details.get("aree", []) if a["id"] == aid]
+    if not aree:
+        return None
+    sub_by_area = {a["nome"]: [] for a in aree}
+    for s in details.get("sottogruppi", []):
+        sub_by_area.setdefault(s["area"], []).append(s)
+
+    ids, labels, parents, values = [], [], [], []
+    colors, text, font_sizes, font_colors = [], [], [], []
+    for a in aree:
+        subs = sub_by_area.get(a["nome"], [])
+        area_score = max(0.0, a["score"])
+        sub_scores = [max(0.0, s["score"]) for s in subs]
+        area_value = sum(sub_scores) if sub_scores else area_score
+        color = _AREA_COLORS.get(a["id"], ORANGE_HEX)
+
+        ids.append(a["id"]); labels.append(a["nome"]); parents.append("")
+        values.append(area_value); colors.append(color)
+        text.append(f"{a['nome']}<br>{area_score:.2f}")
+        font_sizes.append(15); font_colors.append("white")
+
+        for s, sc in zip(subs, sub_scores):
+            nome = s["nome"].upper()
+            ids.append(s["id"]); labels.append(nome); parents.append(a["id"])
+            values.append(sc); colors.append(_lighten(color))
+            text.append(f"{_wrap_label(nome)}<br>{sc:.2f}")
+            font_sizes.append(10); font_colors.append(DARK_HEX)
+
+    fig = _go.Figure(_go.Sunburst(
+        ids=ids, labels=labels, parents=parents, values=values,
+        branchvalues="total", sort=False,
+        marker=dict(colors=colors, line=dict(color="white", width=2)),
+        text=text, textinfo="text",
+        textfont=dict(size=font_sizes, color=font_colors,
+                      family="Calibri, Arial, sans-serif"),
+        insidetextorientation="radial",
+    ))
+    fig.update_layout(
+        margin=dict(t=10, l=10, r=10, b=10),
+        paper_bgcolor="rgba(0,0,0,0)",
+        width=900, height=900,
+    )
+    buf = io.BytesIO()
+    fig.write_image(buf, format="png", scale=2)
+    buf.seek(0)
+    return buf
+
+
+def _swap_shape_with_image(shape, slide, img):
+    """Rimuove 'shape' (un segnaposto testuale) e inserisce 'img' (BytesIO
+    PNG) come immagine quadrata centrata nello stesso ingombro."""
+    l, t, w, h = shape.left, shape.top, shape.width, shape.height
+    size = min(w, h)
+    left = l + (w - size) // 2
+    top = t + (h - size) // 2
+    shape._element.getparent().remove(shape._element)
+    slide.shapes.add_picture(img, left, top, size, size)
+
+
+def _install_dynamic_images(prs, mapping, details=None):
+    """Sostituisce i marcatori immagine dinamici con il grafico generato:
+      - {{radar.aree}}    -> radar delle 4 aree (dal mapping)
+      - {{sunburst.aree}} -> sunburst macro/micro (da 'details', se presente)
+    """
     for slide in prs.slides:
         for shape in list(slide.shapes):
             if not getattr(shape, "has_text_frame", False):
                 continue
             full = "".join(r.text for p in shape.text_frame.paragraphs for r in p.runs)
-            if not RADAR_RE.search(full):
-                continue
-            img = _radar_image(_area_scores(mapping))
-            l, t, w, h = shape.left, shape.top, shape.width, shape.height
-            size = min(w, h)                          # radar quadrato, centrato
-            left = l + (w - size) // 2
-            top = t + (h - size) // 2
-            shape._element.getparent().remove(shape._element)
-            slide.shapes.add_picture(img, left, top, size, size)
+            if RADAR_RE.search(full):
+                if not _HAS_MPL:
+                    continue
+                img = _radar_image(_area_scores(mapping))
+                _swap_shape_with_image(shape, slide, img)
+            elif SUNBURST_RE.search(full):
+                img = _sunburst_image(details) if details else None
+                if img is not None:
+                    _swap_shape_with_image(shape, slide, img)
+                else:
+                    # nessun 'details' numerico disponibile: marcatore
+                    # rimosso senza lasciare {{graffe}} residue nel testo
+                    shape.text_frame.text = ""
 
 
 def extract_placeholders(pptx):
@@ -783,16 +901,18 @@ def extract_placeholders(pptx):
             full = "".join(r.text for r in para.runs)
             for m in PLACEHOLDER_RE.finditer(full):
                 key = m.group(1).strip()
-                if key.startswith("radar"):          # marcatore immagine, non testo
-                    continue
+                if key.startswith("radar") or key.startswith("sunburst"):
+                    continue                         # marcatori immagine, non testo
                 found.add(key)
     return found
 
 
-def fill_pptx(pptx, mapping):
-    """Compila il pptx. Ritorna (BytesIO, stats)."""
+def fill_pptx(pptx, mapping, details=None):
+    """Compila il pptx. 'details' (opzionale) alimenta il grafico sunburst
+    macro/micro; senza, il marcatore {{sunburst.aree}} resta inalterato.
+    Ritorna (BytesIO, stats)."""
     prs = Presentation(pptx)
-    _install_dynamic_images(prs, mapping)            # prima le immagini dinamiche
+    _install_dynamic_images(prs, mapping, details)   # prima le immagini dinamiche
     used, unresolved = set(), set()
     for tf in _iter_text_frames(prs):
         _replace_in_text_frame(tf, mapping, used, unresolved)

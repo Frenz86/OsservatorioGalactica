@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
 """
-Grafico della matrice: scatter 1-4 x 1-4 con la croce delle soglie.
+Grafico della matrice: scatter 1-5 x 1-5 con la croce delle soglie.
 
 Una sola serie di colore: e' la posizione a codificare il quadrante, quindi il
 colore non deve ripeterla. I dieci temi portano etichetta diretta, cosi'
 l'identita' non passa mai dal colore soltanto.
 
-L'asse Y e' un intero 1-4 di content analysis, percio' molti temi finiscono
+L'asse Y e' un intero di content analysis, percio' molti temi finiscono
 esattamente alla stessa quota: le etichette vengono distanziate da un
 posizionamento calcolato (nessuna sovrapposizione) e ricollegate al proprio
 punto da una linea guida sottile.
@@ -25,15 +25,15 @@ GRIGLIA = {"light": "#e1e0d9", "dark": "#2c2c2a"}
 MUTED = "#898781"
 
 ANGOLI = (
-    (1.04, 3.97, "SOVRAESPOSIZIONE", "left", "top"),
-    (3.96, 3.97, "ALLINEAMENTO VIRTUOSO", "right", "top"),
+    (1.04, 4.97, "SOVRAESPOSIZIONE", "left", "top"),
+    (4.96, 4.97, "ALLINEAMENTO VIRTUOSO", "right", "top"),
     (1.04, 1.03, "AREA FRAGILE", "left", "bottom"),
-    (3.96, 1.03, "POTENZIALE NASCOSTO", "right", "bottom"),
+    (4.96, 1.03, "POTENZIALE NASCOSTO", "right", "bottom"),
 )
 
-DOMINIO = [1, 4]
+DOMINIO = [1, 5]
 SCALA = alt.Scale(domain=DOMINIO, nice=False)
-TACCHE = [1, 1.5, 2, 2.5, 3, 3.5, 4]
+TACCHE = [1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5]
 
 PASSO_ETICHETTA = 17       # px fra due etichette accatastate
 LARGHEZZA_CARATTERE = 6.6  # px per carattere a 12px, stima per il test di collisione

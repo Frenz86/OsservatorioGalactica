@@ -102,6 +102,14 @@ MAPPATURA = [dict(zip(CAMPI, d)) for d in DOMANDE]
 # intestazioni attese nell'export Qualtrics (riga 1) per i metadati anagrafici
 META_QUALTRICS = {"A1": "azienda", "A2": "piva", "A3": "dipendenti", "A4": "settore"}
 
+# nomi di colonna/topic (fogli Grafici_1/Grafici_2, Commenti coding) che non
+# corrispondono esattamente ai temi di CODICI: norm(nome) -> nome tema canonico
+_TEMA_ALIAS = {
+    "onboarding & retention": "HR",
+    "retention & onboarding": "HR",
+    "supply chain": "Supply Chain Diversity",
+}
+
 
 class ErroreInput(Exception):
     """Il file caricato non ha la struttura attesa."""
@@ -138,7 +146,7 @@ def _foglio(source, nomi_attesi=()):
 # ------------------------------------------------------------ asse X: survey
 def elenca_rispondenti(source):
     """Righe compilate dell'export Qualtrics: [(numero_riga, etichetta), ...]."""
-    ws = _foglio(source, ["Sheet0"])
+    ws = _foglio(source, ["Sheet0", "Qualtrix_output"])
     col_azienda = next((c for c in range(1, ws.max_column + 1)
                         if str(ws.cell(1, c).value or "").strip() == "A1"), None)
     out = []
@@ -155,7 +163,7 @@ def leggi_survey(source, riga=3):
 
     Struttura attesa: riga 1 = codici domanda, riga 2 = testi, righe 3+ = risposte.
     """
-    ws = _foglio(source, ["Sheet0"])
+    ws = _foglio(source, ["Sheet0", "Qualtrix_output"])
     colonne = {}
     for c in range(1, ws.max_column + 1):
         chiave = ws.cell(1, c).value
@@ -250,18 +258,79 @@ def calcola_x(survey, mappatura=MAPPATURA, codici=CODICI):
 
 
 # --------------------------------------------------------- asse Y: reporting
-def leggi_reporting(source):
-    """Legge il foglio matrice_y: una riga per Azienda x Tema, score intero 1-4."""
-    ws = _foglio(source, ["matrice_y"])
-    intestazioni = {norm(ws.cell(1, c).value): c for c in range(1, ws.max_column + 1)}
-    attese = ["azienda", "tema reporting", "score reporting"]
-    mancanti = [a for a in attese if a not in intestazioni]
-    if mancanti:
-        raise ErroreInput(
-            f"colonne mancanti nel foglio dell'asse Y: {', '.join(mancanti)}. "
-            "Attese: Azienda, Dimensione, Tema reporting, Score reporting, "
-            "Usato matrice, Chiave lookup."
-        )
+def _tema_lookup():
+    """norm(nome tema) -> nome tema canonico (i valori di CODICI)."""
+    lut = {norm(v): v for v in CODICI.values()}
+    lut.update({norm(k): v for k, v in _TEMA_ALIAS.items()})
+    return lut
+
+
+# le 8 dimensioni DEIA dei fogli Grafici_1/Grafici_2 (colonne oltre ai 10 temi
+# di reporting), usate per il radar "diversità" — non fanno parte di CODICI
+DIMENSIONI = ("Religione e credo", "Disabilità", "Generazioni ed età", "Etnia",
+              "Genere", "LGBTQIA+", "Status socio-economico", "Aspetto Fisico")
+
+
+def leggi_valori_grafici(source, nomi_foglio=("Grafici_1", "matrice_y", "Grafici_2")):
+    """Legge un foglio 'largo' (Grafici_1: l'azienda del caso; Grafici_2: le
+    aziende concorrenti + la riga 'Media settore') riga per azienda, con le
+    etichette di colonna cosi' come compaiono nel foglio (non canonicalizzate):
+    serve per i radar, che devono rispecchiare esattamente le etichette del
+    file sorgente (es. 'Onboarding & Retention', non 'HR').
+
+    nomi_foglio seleziona il foglio da leggere (in ordine di preferenza);
+    passa ("Grafici_2",) per leggere esplicitamente il benchmark di settore.
+
+    Ritorna (per_azienda, temi_reporting, dimensioni):
+      per_azienda: {azienda: {etichetta colonna: valore}}
+      temi_reporting: etichette riconosciute come temi CODICI, nell'ordine del foglio
+      dimensioni: etichette riconosciute come dimensioni DEIA, nell'ordine del foglio
+
+    Tutti e tre vuoti se il foglio non e' nel formato 'largo' (es. matrice_y)."""
+    ws = _foglio(source, nomi_foglio)
+    tema_lut = _tema_lookup()
+    dim_lut = {norm(d): d for d in DIMENSIONI}
+
+    col_azienda = None
+    colonne = []  # (indice colonna, etichetta originale, tipo)
+    for c in range(1, ws.max_column + 1):
+        val = ws.cell(1, c).value
+        if val is None:
+            continue
+        n = norm(val)
+        if n in ("nome azienda", "azienda") and col_azienda is None:
+            col_azienda = c
+            continue
+        if n in tema_lut:
+            colonne.append((c, str(val).strip(), "tema"))
+        elif n in dim_lut:
+            colonne.append((c, str(val).strip(), "dimensione"))
+
+    if col_azienda is None or not colonne:
+        return {}, [], []
+
+    per_azienda = {}
+    for r in range(2, ws.max_row + 1):
+        azienda = ws.cell(r, col_azienda).value
+        if not azienda:
+            continue
+        azienda = str(azienda).strip()
+        valori = {}
+        for c, etichetta, _tipo in colonne:
+            v = ws.cell(r, c).value
+            try:
+                valori[etichetta] = float(str(v).replace(",", "."))
+            except (TypeError, ValueError):
+                continue
+        per_azienda[azienda] = valori
+
+    temi_reporting = [et for _c, et, t in colonne if t == "tema"]
+    dimensioni = [et for _c, et, t in colonne if t == "dimensione"]
+    return per_azienda, temi_reporting, dimensioni
+
+
+def _leggi_reporting_lungo(ws, intestazioni):
+    """Formato 'lungo' (foglio matrice_y): una riga per Azienda x Tema."""
 
     def cella(r, nome):
         c = intestazioni.get(norm(nome))
@@ -288,9 +357,101 @@ def leggi_reporting(source):
             "chiave": cella(r, "Chiave lookup") or f"{azienda}|{tema}",
             "riga_fonte": cella(r, "Riga fonte dataset"),
         })
-    if not righe:
-        raise ErroreInput("nessuna riga di content analysis trovata per l'asse Y.")
     return righe
+
+
+def _leggi_reporting_largo(ws):
+    """Formato 'largo' (fogli Grafici_1/Grafici_2 di 01qualtrix_output_finale.xlsx):
+    una riga per azienda, una colonna per tema (Foundation, Onboarding & Retention,
+    Employment...). Le colonne che non corrispondono a un tema di CODICI (es. le
+    ripartizioni per caratteristica: Genere, Etnia...) vengono ignorate."""
+    lut = _tema_lookup()
+    col_azienda, temi_col = None, {}
+    for c in range(1, ws.max_column + 1):
+        n = norm(ws.cell(1, c).value)
+        if not n:
+            continue
+        if n in ("nome azienda", "azienda"):
+            col_azienda = col_azienda or c
+        elif n in lut:
+            temi_col.setdefault(lut[n], c)
+
+    if col_azienda is None or not temi_col:
+        return []
+
+    righe = []
+    for r in range(2, ws.max_row + 1):
+        azienda = ws.cell(r, col_azienda).value
+        if not azienda:
+            continue
+        azienda = str(azienda).strip()
+        for tema, c in temi_col.items():
+            grezzo = ws.cell(r, c).value
+            try:
+                score = float(str(grezzo).replace(",", "."))
+            except (TypeError, ValueError):
+                continue
+            righe.append({
+                "azienda": azienda,
+                "dimensione": None,
+                "tema": tema,
+                "score": score,
+                "usato": SI,
+                "chiave": f"{azienda}|{tema}",
+                "riga_fonte": r,
+            })
+    return righe
+
+
+def leggi_reporting(source):
+    """Legge i dati dell'asse Y (reporting). Riconosce sia il formato 'largo'
+    (fogli Grafici_1/Grafici_2: una riga per azienda, una colonna per tema —
+    01qualtrix_output_finale.xlsx) sia il formato 'lungo' (foglio matrice_y:
+    una riga per Azienda x Tema — elaborato_giorgia.xlsx)."""
+    ws = _foglio(source, ["Grafici_1", "matrice_y", "Grafici_2"])
+    intestazioni = {norm(ws.cell(1, c).value): c for c in range(1, ws.max_column + 1)}
+
+    attese_lungo = ["azienda", "tema reporting", "score reporting"]
+    if all(a in intestazioni for a in attese_lungo):
+        righe = _leggi_reporting_lungo(ws, intestazioni)
+    else:
+        righe = _leggi_reporting_largo(ws)
+
+    if not righe:
+        raise ErroreInput(
+            "nessuna riga di content analysis trovata per l'asse Y. Atteso il "
+            "foglio 'Grafici_1' o 'Grafici_2' (una riga per azienda, una colonna "
+            "per tema: Foundation, Onboarding & Retention, Employment...) oppure "
+            "'matrice_y' (Azienda, Dimensione, Tema reporting, Score reporting)."
+        )
+    return righe
+
+
+def leggi_commenti(source):
+    """Legge la libreria dei commenti per punteggio (foglio 'Commenti coding'
+    di Y_commenti_dinamici.xlsx): {(tema canonico, livello 1-4): testo}.
+
+    Il file copre 18 topic (i 10 temi di CODICI + le 8 dimensioni DEIA di
+    Grafici_1/2 come Genere, Etnia...): qui vengono tenuti solo i topic
+    riconducibili a un tema di CODICI, gli altri sono ignorati."""
+    ws = _foglio(source, ["Commenti coding"])
+    lut = _tema_lookup()
+    commenti = {}
+    for row in ws.iter_rows(min_row=2, values_only=True):
+        topic = row[0] if len(row) > 0 else None
+        livello = row[1] if len(row) > 1 else None
+        testo = row[2] if len(row) > 2 else None
+        if not topic or livello is None:
+            continue
+        tema = lut.get(norm(topic))
+        if tema is None:
+            continue
+        try:
+            lv = int(livello)
+        except (TypeError, ValueError):
+            continue
+        commenti[(tema, lv)] = "" if testo is None else str(testo).strip()
+    return commenti
 
 
 def aziende_reporting(reporting, solo_usate=True):
