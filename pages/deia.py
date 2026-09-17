@@ -24,6 +24,20 @@ from mod1.pptx_filler import (
 # libreria DEIA: file fisso sul server, non più caricabile da frontend
 MAPPING_PATH = Path(__file__).resolve().parents[1] / "mod1" / "deia_mapping_GM.xlsx"
 
+
+@st.cache_resource
+def _avvia_kaleido():
+    """Tiene acceso un solo Chromium condiviso per gli export PNG via kaleido
+    (il sunburst): senza, ogni export riavvia il browser da zero (~5s); con il
+    server persistente costa ~0,2s dopo il primo avvio. st.cache_resource fa
+    sì che parta una sola volta per processo, non a ogni rerun."""
+    import kaleido
+    kaleido.start_sync_server()
+    return True
+
+
+_avvia_kaleido()
+
 st.title("📊 Compilatore PowerPoint DEIA")
 st.caption(
     "Carica il template e i risultati della survey. "

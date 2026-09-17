@@ -20,8 +20,10 @@ import textwrap
 import unicodedata
 from openpyxl import load_workbook, Workbook
 from openpyxl.styles import Font, PatternFill
+from PIL import Image
 from pptx import Presentation
 from pptx.enum.shapes import MSO_SHAPE_TYPE
+from pptx.util import Pt
 
 # backend headless per generare il radar anche senza display
 try:
@@ -764,6 +766,13 @@ def _radar_image(scores):
 
 SUNBURST_RE = re.compile(r"\{\{\s*sunburst\.aree\s*\}\}")
 
+# prefissi di segnaposto "non testuali": marcatori immagine/tabella dinamici
+# (radar/sunburst gestiti qui sotto; matrice/descrizioni sono i marcatori
+# generici popolati da 'immagini_extra'/'tabelle_extra' in fill_pptx). Usati
+# per escluderli dal conteggio segnaposto testuali di extract_placeholders e
+# per svuotarli senza lasciare graffe quando la chiamata non fornisce dati.
+_SPECIAL_PREFIXES = ("radar", "sunburst", "matrice", "descrizioni")
+
 # colori per area (anello interno pieno, anello esterno schiarito)
 _AREA_COLORS = {
     "strategia": "#E86A17",
@@ -859,20 +868,64 @@ def _sunburst_image(details):
 
 def _swap_shape_with_image(shape, slide, img):
     """Rimuove 'shape' (un segnaposto testuale) e inserisce 'img' (BytesIO
-    PNG) come immagine quadrata centrata nello stesso ingombro."""
+    PNG) centrata nello stesso ingombro, preservando le proporzioni originali
+    dell'immagine (adattamento 'contain': niente distorsione ne' ritaglio).
+    Radar/sunburst sono quadrati quindi il comportamento e' invariato; serve
+    per immagini non quadrate come il grafico della matrice di trasparenza."""
     l, t, w, h = shape.left, shape.top, shape.width, shape.height
-    size = min(w, h)
-    left = l + (w - size) // 2
-    top = t + (h - size) // 2
     shape._element.getparent().remove(shape._element)
-    slide.shapes.add_picture(img, left, top, size, size)
+
+    img.seek(0)
+    iw, ih = Image.open(img).size
+    img.seek(0)
+    if iw / ih > w / h:                 # immagine più "larga" del box: vincola la larghezza
+        pic_w, pic_h = w, round(w * ih / iw)
+    else:                               # vincola l'altezza
+        pic_h, pic_w = h, round(h * iw / ih)
+    left = l + (w - pic_w) // 2
+    top = t + (h - pic_h) // 2
+    slide.shapes.add_picture(img, left, top, pic_w, pic_h)
 
 
-def _install_dynamic_images(prs, mapping, details=None):
+def _swap_shape_with_table(shape, slide, spec):
+    """Rimuove 'shape' e inserisce al suo posto una tabella PowerPoint nativa
+    nello stesso ingombro. 'spec': {"headers": [...], "rows": [[...], ...],
+    "row_colors": [RGBColor|None, ...] (opzionale, una voce per riga dati)}."""
+    headers = spec["headers"]
+    rows = spec["rows"]
+    row_colors = spec.get("row_colors") or [None] * len(rows)
+    l, t, w, h = shape.left, shape.top, shape.width, shape.height
+    shape._element.getparent().remove(shape._element)
+
+    gt = slide.shapes.add_table(len(rows) + 1, len(headers), l, t, w, h).table
+    for j, testo in enumerate(headers):
+        cell = gt.cell(0, j)
+        cell.text = str(testo)
+        for p in cell.text_frame.paragraphs:
+            p.font.bold = True
+            p.font.size = Pt(10)
+    for i, riga in enumerate(rows, start=1):
+        colore = row_colors[i - 1] if i - 1 < len(row_colors) else None
+        for j, valore in enumerate(riga):
+            cell = gt.cell(i, j)
+            cell.text_frame.word_wrap = True
+            cell.text = "" if valore is None else str(valore)
+            for p in cell.text_frame.paragraphs:
+                p.font.size = Pt(9)
+            if colore is not None:
+                cell.fill.solid()
+                cell.fill.fore_color.rgb = colore
+
+
+def _install_dynamic_images(prs, mapping, details=None, immagini_extra=None):
     """Sostituisce i marcatori immagine dinamici con il grafico generato:
       - {{radar.aree}}    -> radar delle 4 aree (dal mapping)
       - {{sunburst.aree}} -> sunburst macro/micro (da 'details', se presente)
+      - qualsiasi altra chiave presente in 'immagini_extra' (bytes PNG),
+        marcatori generici popolati da chi chiama fill_pptx (es. i radar e il
+        grafico della matrice di trasparenza del modulo mod2)
     """
+    immagini_extra = immagini_extra or {}
     for slide in prs.slides:
         for shape in list(slide.shapes):
             if not getattr(shape, "has_text_frame", False):
@@ -883,7 +936,8 @@ def _install_dynamic_images(prs, mapping, details=None):
                     continue
                 img = _radar_image(_area_scores(mapping))
                 _swap_shape_with_image(shape, slide, img)
-            elif SUNBURST_RE.search(full):
+                continue
+            if SUNBURST_RE.search(full):
                 img = _sunburst_image(details) if details else None
                 if img is not None:
                     _swap_shape_with_image(shape, slide, img)
@@ -891,6 +945,50 @@ def _install_dynamic_images(prs, mapping, details=None):
                     # nessun 'details' numerico disponibile: marcatore
                     # rimosso senza lasciare {{graffe}} residue nel testo
                     shape.text_frame.text = ""
+                continue
+            m = PLACEHOLDER_RE.search(full)
+            if m and m.group(1).strip() in immagini_extra:
+                img = immagini_extra[m.group(1).strip()]
+                if img is not None:
+                    _swap_shape_with_image(shape, slide, img)
+                else:
+                    shape.text_frame.text = ""
+
+
+def _install_dynamic_tables(prs, tabelle_extra=None):
+    """Sostituisce i marcatori tabella generici (chiave presente in
+    'tabelle_extra') con una tabella PowerPoint nativa. Vedi
+    _swap_shape_with_table per il formato di ogni voce."""
+    tabelle_extra = tabelle_extra or {}
+    for slide in prs.slides:
+        for shape in list(slide.shapes):
+            if not getattr(shape, "has_text_frame", False):
+                continue
+            full = "".join(r.text for p in shape.text_frame.paragraphs for r in p.runs)
+            m = PLACEHOLDER_RE.search(full)
+            if not m or m.group(1).strip() not in tabelle_extra:
+                continue
+            spec = tabelle_extra[m.group(1).strip()]
+            if spec is not None:
+                _swap_shape_with_table(shape, slide, spec)
+            else:
+                shape.text_frame.text = ""
+
+
+def _clear_unresolved_special_markers(prs):
+    """Ultima passata: qualsiasi marcatore {{radar...}}/{{sunburst...}}/
+    {{matrice...}}/{{descrizioni...}} rimasto testo letterale (perche' la
+    chiamata a fill_pptx non ha fornito il dato corrispondente) viene svuotato
+    senza lasciare graffe residue, cosi' come gia' accade oggi per il sunburst
+    senza 'details'."""
+    for slide in prs.slides:
+        for shape in list(slide.shapes):
+            if not getattr(shape, "has_text_frame", False):
+                continue
+            full = "".join(r.text for p in shape.text_frame.paragraphs for r in p.runs)
+            m = PLACEHOLDER_RE.search(full)
+            if m and m.group(1).strip().startswith(_SPECIAL_PREFIXES):
+                shape.text_frame.text = ""
 
 
 def extract_placeholders(pptx):
@@ -901,18 +999,23 @@ def extract_placeholders(pptx):
             full = "".join(r.text for r in para.runs)
             for m in PLACEHOLDER_RE.finditer(full):
                 key = m.group(1).strip()
-                if key.startswith("radar") or key.startswith("sunburst"):
-                    continue                         # marcatori immagine, non testo
+                if key.startswith(_SPECIAL_PREFIXES):
+                    continue                         # marcatori immagine/tabella, non testo
                 found.add(key)
     return found
 
 
-def fill_pptx(pptx, mapping, details=None):
+def fill_pptx(pptx, mapping, details=None, immagini_extra=None, tabelle_extra=None):
     """Compila il pptx. 'details' (opzionale) alimenta il grafico sunburst
     macro/micro; senza, il marcatore {{sunburst.aree}} resta inalterato.
+    'immagini_extra'/'tabelle_extra' (opzionali) popolano marcatori generici
+    aggiuntivi (vedi _install_dynamic_images/_install_dynamic_tables) — senza,
+    quei marcatori vengono svuotati senza lasciare graffe residue.
     Ritorna (BytesIO, stats)."""
     prs = Presentation(pptx)
-    _install_dynamic_images(prs, mapping, details)   # prima le immagini dinamiche
+    _install_dynamic_images(prs, mapping, details, immagini_extra)  # prima le immagini
+    _install_dynamic_tables(prs, tabelle_extra)                     # poi le tabelle
+    _clear_unresolved_special_markers(prs)      # infine, ripulisce i marcatori senza dati
     used, unresolved = set(), set()
     for tf in _iter_text_frames(prs):
         _replace_in_text_frame(tf, mapping, used, unresolved)

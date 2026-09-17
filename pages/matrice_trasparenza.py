@@ -16,11 +16,10 @@ import io
 from pathlib import Path
 
 import pandas as pd
-import plotly.graph_objects as go
 import streamlit as st
 
 from mod2 import deia_core as core
-from mod2.grafico import matrice_chart
+from mod2.grafico import matrice_chart, radar_figure
 
 COLONNE_MATRICE = ["Tema", "X praticata", "Y comunicata", "Quadrante"]
 
@@ -50,37 +49,6 @@ def it(v, dec=2):
     if v is None or pd.isna(v):
         return "n.d."
     return f"{v:.{dec}f}".replace(".", ",")
-
-
-def radar(labels, valori, titolo, colore, riempimento):
-    """Spider/radar chart Plotly 0-4, chiuso (il primo punto e' ripetuto in
-    coda), stile a righe punteggiate con area riempita."""
-    r = [valori.get(lb, 0) for lb in labels]
-    fig = go.Figure(go.Scatterpolar(
-        r=r + r[:1], theta=labels + labels[:1],
-        fill="toself", fillcolor=riempimento,
-        line=dict(color=colore, width=2, dash="dot"),
-        marker=dict(size=4, color=colore),
-    ))
-    tick = [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4]
-    fig.update_layout(
-        polar=dict(
-            radialaxis=dict(
-                range=[0, 4], tickvals=tick,
-                ticktext=[it(v, 1) for v in tick],
-                tickfont=dict(size=9, color="#999999"),
-                gridcolor="#e1e0d9",
-            ),
-            angularaxis=dict(tickfont=dict(size=11, color="#333333")),
-            bgcolor="rgba(0,0,0,0)",
-        ),
-        showlegend=False,
-        title=dict(text=titolo, font=dict(size=15, color="#666666"), x=0.5),
-        paper_bgcolor="rgba(0,0,0,0)",
-        margin=dict(t=60, b=30, l=40, r=40),
-        height=440,
-    )
-    return fig
 
 
 # ------------------------------------------------------------------ layout
@@ -183,14 +151,14 @@ if valori_y and temi_grafici and dim_grafici:
     rc1, rc2 = st.columns(2)
     with rc1:
         st.plotly_chart(
-            radar(temi_grafici, valori_y, f"{azienda_y.upper()}_REPORTING",
-                  "#3a9d5d", "rgba(58,157,93,0.18)"),
+            radar_figure(temi_grafici, valori_y, f"{azienda_y.upper()}_REPORTING",
+                         "#3a9d5d", "rgba(58,157,93,0.18)"),
             width="stretch",
         )
     with rc2:
         st.plotly_chart(
-            radar(dim_grafici, valori_y, f"{azienda_y.upper()}_DIVERSITA'",
-                  "#d97a95", "rgba(217,122,149,0.18)"),
+            radar_figure(dim_grafici, valori_y, f"{azienda_y.upper()}_DIVERSITA'",
+                         "#d97a95", "rgba(217,122,149,0.18)"),
             width="stretch",
         )
 
@@ -208,14 +176,14 @@ if valori_media and temi_settore and dim_settore:
     rc3, rc4 = st.columns(2)
     with rc3:
         st.plotly_chart(
-            radar(temi_settore, valori_media, "MEDIA SETTORE_REPORTING",
-                  "#5b7fa6", "rgba(91,127,166,0.18)"),
+            radar_figure(temi_settore, valori_media, "MEDIA SETTORE_REPORTING",
+                         "#5b7fa6", "rgba(91,127,166,0.18)"),
             width="stretch",
         )
     with rc4:
         st.plotly_chart(
-            radar(dim_settore, valori_media, "MEDIA SETTORE_DIVERSITA'",
-                  "#5b7fa6", "rgba(91,127,166,0.18)"),
+            radar_figure(dim_settore, valori_media, "MEDIA SETTORE_DIVERSITA'",
+                         "#5b7fa6", "rgba(91,127,166,0.18)"),
             width="stretch",
         )
 

@@ -16,8 +16,11 @@ luminosita', chroma, contrasto >= 3:1) sulle superfici di Streamlit #ffffff e
 #0e1117.
 """
 
+import io
+
 import altair as alt
 import pandas as pd
+import plotly.graph_objects as go
 
 SERIE = {"light": "#2a78d6", "dark": "#3987e5"}
 INK = {"light": "#0b0b0b", "dark": "#ffffff"}
@@ -168,3 +171,64 @@ def matrice_chart(df, soglia, modo="light", altezza=460, larghezza=760):
     return ((croce + note + guide + punti + testi)
             .properties(height=altezza, width=larghezza)
             .configure_view(strokeWidth=0))
+
+
+def matrice_chart_png(df, soglia, modo="light", scale=2):
+    """Esporta matrice_chart in PNG statico (per il PPTX), riusando la stessa
+    logica Altair — incluso l'anti-sovrapposizione delle etichette — invece
+    di riscrivere lo scatter in un'altra libreria. Richiede vl-convert-python
+    (installato come dipendenza di altair per l'export). None se non c'e'
+    nulla da disegnare (nessuna riga con X e Y entrambi presenti)."""
+    chart = matrice_chart(df, soglia, modo)
+    if chart is None:
+        return None
+    buf = io.BytesIO()
+    chart.save(buf, format="png", scale_factor=scale)
+    buf.seek(0)
+    return buf
+
+
+def _it(v, dec=1):
+    """Numero in formato italiano (virgola decimale), per le tacche del radar."""
+    return f"{v:.{dec}f}".replace(".", ",")
+
+
+def radar_figure(labels, valori, titolo, colore, riempimento):
+    """Spider/radar chart Plotly 0-4, chiuso (il primo punto e' ripetuto in
+    coda), stile a righe punteggiate con area riempita. Usato sia nella pagina
+    Streamlit (st.plotly_chart) sia per l'export PNG nel PPTX (fig.write_image,
+    via kaleido — stessa libreria gia' usata da mod1 per il sunburst)."""
+    r = [valori.get(lb, 0) for lb in labels]
+    fig = go.Figure(go.Scatterpolar(
+        r=r + r[:1], theta=labels + labels[:1],
+        fill="toself", fillcolor=riempimento,
+        line=dict(color=colore, width=2, dash="dot"),
+        marker=dict(size=4, color=colore),
+    ))
+    tick = [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4]
+    fig.update_layout(
+        polar=dict(
+            radialaxis=dict(
+                range=[0, 4], tickvals=tick,
+                ticktext=[_it(v) for v in tick],
+                tickfont=dict(size=9, color="#999999"),
+                gridcolor="#e1e0d9",
+            ),
+            angularaxis=dict(tickfont=dict(size=11, color="#333333")),
+            bgcolor="rgba(0,0,0,0)",
+        ),
+        showlegend=False,
+        title=dict(text=titolo, font=dict(size=15, color="#666666"), x=0.5),
+        paper_bgcolor="rgba(0,0,0,0)",
+        margin=dict(t=60, b=30, l=40, r=40),
+        height=440,
+    )
+    return fig
+
+
+def radar_png(fig, scale=2):
+    """Esporta una figura di radar_figure() in PNG statico (per il PPTX)."""
+    buf = io.BytesIO()
+    fig.write_image(buf, format="png", scale=scale)
+    buf.seek(0)
+    return buf

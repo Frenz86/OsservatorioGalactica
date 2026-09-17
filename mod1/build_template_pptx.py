@@ -178,6 +178,77 @@ def add_profile_slide():
 add_profile_slide()
 
 
+# ------------------------------------------- SLIDE: profilo radar esterno
+def add_radar_esterno_slide():
+    slide = prs.slides.add_slide(blank)
+
+    bar = slide.shapes.add_shape(1, Inches(0.55), Inches(0.42), Inches(1.15), Inches(0.11))
+    bar.fill.solid(); bar.fill.fore_color.rgb = ORANGE
+    bar.line.fill.background()
+
+    add_text(slide, 0.55, 0.52, 11.5, 0.8, "PROFILO RADAR ESTERNO", 30, bold=True)
+    add_text(slide, 0.55, 1.18, 11.5, 0.4,
+             "Punteggi di reporting e delle dimensioni DEIA: azienda vs media dei concorrenti",
+             13, color=GREY)
+
+    # marcatori immagine: alla compilazione diventano i 4 radar dinamici
+    cw, ch, gap_x, gap_y = 5.9, 2.75, 0.3, 0.2
+    x1, x2 = 0.55, 0.55 + cw + gap_x
+    y1 = 1.65
+    y2 = y1 + ch + gap_y
+    add_text(slide, x1, y1, cw, ch, "{{radar_reporting.azienda}}", 12, color=LINE)
+    add_text(slide, x2, y1, cw, ch, "{{radar_diversita.azienda}}", 12, color=LINE)
+    add_text(slide, x1, y2, cw, ch, "{{radar_reporting.settore}}", 12, color=LINE)
+    add_text(slide, x2, y2, cw, ch, "{{radar_diversita.settore}}", 12, color=LINE)
+
+
+add_radar_esterno_slide()
+
+
+# ------------------------------------------- SLIDE: matrice di trasparenza
+def add_matrice_slide():
+    slide = prs.slides.add_slide(blank)
+
+    bar = slide.shapes.add_shape(1, Inches(0.55), Inches(0.42), Inches(1.15), Inches(0.11))
+    bar.fill.solid(); bar.fill.fore_color.rgb = ORANGE
+    bar.line.fill.background()
+
+    add_text(slide, 0.55, 0.52, 11.5, 0.8, "MATRICE DI TRASPARENZA", 30, bold=True)
+    add_text(slide, 0.55, 1.18, 11.5, 0.4,
+             "Maturità praticata (survey) vs comunicata (reporting) sui 10 temi",
+             13, color=GREY)
+
+    # marcatore tabella: alla compilazione diventa una tabella PowerPoint nativa
+    add_text(slide, 0.55, 1.7, 5.7, 5.3, "{{matrice.tabella}}", 12, color=LINE)
+    # marcatore immagine: alla compilazione diventa il grafico a quadranti
+    add_text(slide, 6.55, 1.7, 6.25, 5.3, "{{matrice.grafico}}", 12, color=LINE)
+
+
+add_matrice_slide()
+
+
+# ------------------------------------- SLIDE: descrizioni per punteggio (1/2, 2/2)
+def add_descrizioni_slide(indice):
+    slide = prs.slides.add_slide(blank)
+
+    bar = slide.shapes.add_shape(1, Inches(0.55), Inches(0.42), Inches(1.15), Inches(0.11))
+    bar.fill.solid(); bar.fill.fore_color.rgb = ORANGE
+    bar.line.fill.background()
+
+    add_text(slide, 0.55, 0.52, 11.5, 0.8,
+             f"DESCRIZIONI PER PUNTEGGIO ({indice}/2)", 30, bold=True)
+    add_text(slide, 0.55, 1.18, 11.5, 0.4,
+             "Testo di riferimento del punteggio comunicato (asse Y), 5 temi per slide",
+             13, color=GREY)
+
+    # marcatore tabella: alla compilazione diventa una tabella PowerPoint nativa
+    add_text(slide, 0.55, 1.7, 12.25, 5.3, "{{descrizioni.tabella%d}}" % indice, 12, color=LINE)
+
+
+add_descrizioni_slide(1)
+add_descrizioni_slide(2)
+
+
 out = BASE / "template_esempio.pptx"
 prs.save(out)
 print(f"Slide: {len(prs.slides._sldIdLst)} | Scritto: {out}")

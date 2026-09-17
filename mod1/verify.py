@@ -104,17 +104,18 @@ b3, s3 = fill_pptx(_save(prs), mapping)
 t3 = all_text(Presentation(b3))
 check("Valori, comportamenti" in t3 and "{{" not in t3, "segnaposto in tabella sostituito")
 
-print("== 7. Radar dinamico sulla slide finale ==")
+print("== 7. Radar dinamico sul template compilato ==")
 from pptx.enum.shapes import MSO_SHAPE_TYPE
 buf.seek(0)
 last = Presentation(buf)                       # template compilato al punto 4
-final_slide = last.slides[len(last.slides._sldIdLst) - 1]
-pics = [sh for sh in final_slide.shapes if sh.shape_type == MSO_SHAPE_TYPE.PICTURE]
-check(len(pics) == 1, f"1 immagine radar sulla slide finale (trovate {len(pics)})")
+pics = [sh for s in last.slides for sh in s.shapes if sh.shape_type == MSO_SHAPE_TYPE.PICTURE]
+check(len(pics) == 1, f"1 immagine radar nel file compilato (trovate {len(pics)})")
 radar_txt = all_text(last)
 check("{{radar" not in radar_txt, "nessun marcatore radar residuo nel file compilato")
 check("{{sunburst" not in radar_txt,
       "senza 'details' il marcatore sunburst è rimosso senza lasciare graffe")
+check("{{matrice" not in radar_txt and "{{descrizioni" not in radar_txt,
+      "senza 'immagini_extra'/'tabelle_extra' i marcatori mod2 sono rimossi senza lasciare graffe")
 
 print("== 8. Sunburst macro/micro sulla slide finale ==")
 from mod1.pptx_filler import _sunburst_image, _sigla, AREA_ORDER
@@ -143,6 +144,47 @@ tb.text_frame.text = "{{sunburst.aree}}"
 b4, s4 = fill_pptx(_save(prs), {}, details=fake_details)
 pics4 = [sh for sh in Presentation(b4).slides[0].shapes if sh.shape_type == MSO_SHAPE_TYPE.PICTURE]
 check(len(pics4) == 1, "{{sunburst.aree}} sostituito con un'immagine quando 'details' è presente")
+
+print("== 9. Marcatori generici immagine/tabella (immagini_extra/tabelle_extra) ==")
+from pptx.dml.color import RGBColor
+
+prs = Presentation()
+sl = prs.slides.add_slide(prs.slide_layouts[6])
+img_box = sl.shapes.add_textbox(Inches(1), Inches(1), Inches(3), Inches(2))
+img_box.text_frame.text = "{{matrice.grafico}}"
+tab_box = sl.shapes.add_textbox(Inches(1), Inches(4), Inches(6), Inches(2))
+tab_box.text_frame.text = "{{matrice.tabella}}"
+
+fake_png = _sunburst_image(fake_details)          # un PNG qualsiasi, basta come contenuto
+immagini_extra = {"matrice.grafico": fake_png}
+tabelle_extra = {"matrice.tabella": {
+    "headers": ["Tema", "X", "Y"],
+    "rows": [["Foundation", "1,86", "4,00"], ["HR", "2,56", "3,00"]],
+    "row_colors": [RGBColor(0xFC, 0xE7, 0xDC), None],
+}}
+b5, s5 = fill_pptx(_save(prs), {}, immagini_extra=immagini_extra, tabelle_extra=tabelle_extra)
+p5 = Presentation(b5)
+pics5 = [sh for s in p5.slides for sh in s.shapes if sh.shape_type == MSO_SHAPE_TYPE.PICTURE]
+check(len(pics5) == 1, "{{matrice.grafico}} sostituito con un'immagine quando 'immagini_extra' è presente")
+tabelle5 = [sh.table for s in p5.slides for sh in s.shapes if sh.has_table]
+check(len(tabelle5) == 1, "{{matrice.tabella}} sostituito con una tabella quando 'tabelle_extra' è presente")
+if tabelle5:
+    t = tabelle5[0]
+    check((len(t.rows), len(t.columns)) == (3, 3), "tabella con intestazione + 2 righe dati, 3 colonne")
+    check(t.cell(0, 0).text == "Tema" and t.cell(1, 0).text == "Foundation" and t.cell(2, 1).text == "2,56",
+          "contenuto delle celle della tabella corretto")
+txt5 = all_text(p5)
+check("{{" not in txt5, "nessuna graffa residua con marcatori generici popolati")
+
+# senza immagini_extra/tabelle_extra, gli stessi marcatori vengono svuotati
+prs2 = Presentation()
+sl2 = prs2.slides.add_slide(prs2.slide_layouts[6])
+sl2.shapes.add_textbox(Inches(1), Inches(1), Inches(3), Inches(2)).text_frame.text = "{{matrice.grafico}}"
+sl2.shapes.add_textbox(Inches(1), Inches(4), Inches(6), Inches(2)).text_frame.text = "{{descrizioni.tabella1}}"
+b6, s6 = fill_pptx(_save(prs2), {})
+txt6 = all_text(Presentation(b6))
+check("{{" not in txt6,
+      "senza 'immagini_extra'/'tabelle_extra' i marcatori generici sono rimossi senza lasciare graffe")
 
 print("\nJSON valido:", end=" ")
 json.loads((BASE / "deia_framework.json").read_text(encoding="utf-8"))

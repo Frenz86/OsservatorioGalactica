@@ -6,6 +6,7 @@ App Streamlit multipagina — Osservatorio Galactica.
 Pagine:
   - Compilatore PowerPoint DEIA (pages/deia.py, logica in mod1)
   - Matrice di trasparenza DEIA (pages/matrice_trasparenza.py, logica in mod2)
+  - Report completo DEIA (pages/report_completo.py, unisce mod1 + mod2 in un PPTX)
 
 Avvio:
     pip install -r requirements.txt
@@ -34,8 +35,9 @@ if not st.session_state.get("autenticato"):
 # ----------------------------------------------------------------------------
 
 pagine = [
-    st.Page("pages/deia.py", title="Compilatore PowerPoint DEIA", icon="📊"),
-    st.Page("pages/matrice_trasparenza.py", title="Matrice di trasparenza DEIA", icon="🧭"),
+    #st.Page("pages/deia.py", title="Compilatore PowerPoint DEIA", icon="📊"),
+    #st.Page("pages/matrice_trasparenza.py", title="Matrice di trasparenza DEIA", icon="🧭"),
+    st.Page("pages/report_completo.py", title="Report completo DEIA", icon="🧩"),
 ]
 pg = st.navigation(pagine)
 pg.run()
